@@ -1,0 +1,652 @@
+// FASE 1: SQLite local.  FASE 2: cambiar provider a "postgresql" + directUrl (Supabase). Ver docs/PLAN.md §5.
+// Reglas de portabilidad SQLite -> Postgres: sin enums nativos (strings validados en lib/constants.ts),
+// ids cuid() generados por la app, sin tipos específicos de motor.
+//
+// Regla de "nada hardcodeado" (ver docs/MATRIZ_FUNCIONAL.md): cualquier lista que en el diseño se veía fija
+// (niveles/credenciales, temas, categorías de evento, alcance territorial, tipos de actividad, competencias,
+// intenciones de contacto) es un CATÁLOGO en BD (sección "Catálogos"), sembrado en prisma/seed.ts y editable
+// después desde el portal admin (fase 3). Las pantallas solo consultan Prisma; no hay arrays de contenido en TSX.
+// FASE 2: Postgres en Supabase. SQLite local queda como respaldo (comentar directUrl y provider sqlite).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ───────────── Identidad, acceso y permisos (portal admin, fase 3) ─────────────
+
+model User {
+  id           String    @id @default(cuid())
+  authId       String?   @unique // fase 2: uuid de auth.users en Supabase
+  email        String    @unique
+  passwordHash String? // solo fase 1 (login por correo local); en fase 2 lo gestiona Supabase Auth
+  name         String
+  status       String    @default("ACTIVE") // ACTIVE | SUSPENDED | REVOKED
+  validFrom    DateTime  @default(now()) // vigencia del acceso
+  validUntil   DateTime? // null = sin caducidad
+  roleId       String
+  role         Role      @relation(fields: [roleId], references: [id])
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastLoginAt  DateTime?
+
+  overrides       UserPermission[]
+  profile         Profile?
+  devices         DeviceToken[]
+  auditLogs       AuditLog[]
+  notifications   Notification[]
+  posts           Post[]
+  postReactions   PostReaction[]
+  messages        Message[]
+  messageReactions MessageReaction[]
+  conversations   ConversationMember[]
+  communities     CommunityMember[]
+  eventRsvps      EventRsvp[]
+  eventProposals  EventProposal[]
+  creditLedger    CreditLedger[]
+  enrollments     AcademyEnrollment[]
+  tutoredEnrollments AcademyEnrollment[] @relation("tutor")
+  lessonProgress  LessonProgress[]
+  achievements    UserAchievement[]
+  credentials     Credential[]
+  travelLogs      TravelLog[]      @relation("traveler")
+  reviewedTravel  TravelLog[]      @relation("reviewer")
+  reviewedSubs    Submission[]     @relation("reviewer")
+
+  @@index([status])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  key         String           @unique // admin | member | ...
+  name        String
+  description String?
+  isSystem    Boolean          @default(false)
+  permissions RolePermission[]
+  users       User[]
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique // p.ej. "events.manage", "users.write"
+  module      String
+  description String?
+  roles       RolePermission[]
+  overrides   UserPermission[]
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@id([roleId, permissionId])
+}
+
+// Excepciones por usuario sobre su rol (grant / deny)
+model UserPermission {
+  userId       String
+  permissionId String
+  effect       String     @default("GRANT") // GRANT | DENY
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  @@id([userId, permissionId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String // user.create, user.suspend, permission.grant...
+  target    String?
+  meta      String? // JSON serializado
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model DeviceToken { // push (Firebase Cloud Messaging, fase 2)
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  platform  String // ios | android | web
+  createdAt DateTime @default(now())
+}
+
+// Centro de notificaciones (icono de campana en toda la app)
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String // BIRTHDAY | NEW_MEMBER | EVENT_REMINDER | MESSAGE | ACHIEVEMENT | CREDENTIAL | COMMUNITY
+  title     String
+  body      String?
+  link      String? // ruta interna, p.ej. /eventos
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, createdAt])
+}
+
+// ───────────── Catálogos (nada hardcodeado en pantallas) ─────────────
+
+model Tier { // niveles de acreditación: Certified, Master Coach, Fellow, MCC...
+  id       String    @id @default(cuid())
+  key      String    @unique
+  name     String
+  rank     Int       @default(1) // mayor = más alto
+  colorKey String    @default("secondary") // token de color (ver tailwind.config.js) para el chip
+  profiles Profile[]
+}
+
+model Topic { // especialidades / hashtags de perfiles, publicaciones y eventos
+  id       String         @id @default(cuid())
+  key      String         @unique
+  name     String
+  profiles ProfileTopic[]
+  posts    PostTopic[]
+}
+
+model ProfileTopic {
+  profileId String
+  topicId   String
+  profile   Profile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  topic     Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  @@id([profileId, topicId])
+}
+
+model PostTopic {
+  postId  String
+  topicId String
+  post    Post  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  topic   Topic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  @@id([postId, topicId])
+}
+
+model IntentTag { // "Conecta conmigo si..." / "Estoy abierto a..."
+  id       String            @id @default(cuid())
+  kind     String // CONNECT_IF | OPEN_TO
+  key      String            @unique
+  name     String
+  profiles ProfileIntentTag[]
+}
+
+model ProfileIntentTag {
+  profileId String
+  tagId     String
+  profile   Profile   @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  tag       IntentTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  @@id([profileId, tagId])
+}
+
+model EventCategory { // Keynotes, Masterclasses, Cumbres ICSF, Mentorías...
+  id     String  @id @default(cuid())
+  key    String  @unique
+  name   String
+  icon   String  @default("event")
+  events Event[]
+  proposals EventProposal[]
+}
+
+model Scope { // alcance territorial de una pregunta a la comunidad
+  id    String @id @default(cuid())
+  key   String @unique
+  name  String
+  posts Post[]
+}
+
+model ActivityType { // tipo de actividad en "Nuevo registro de viaje"
+  id    String      @id @default(cuid())
+  key   String      @unique
+  name  String
+  logs  TravelLog[]
+}
+
+model Competency { // competencias avaladas en la credencial digital
+  id          String                @id @default(cuid())
+  key         String                @unique
+  name        String
+  description String?
+  credentials CredentialCompetency[]
+}
+
+// ───────────── Perfil y red ─────────────
+
+model Profile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug      String   @unique
+  title     String? // "Master Speaker", "Fellow"
+  quote     String? // cita que aparece en la tarjeta
+  tierId    String?
+  tier      Tier?    @relation(fields: [tierId], references: [id])
+  bio       String?
+  avatarUrl String?
+  city      String?
+  country   String?
+  region    String? // estado / departamento (agrupación del mapa, no GPS)
+  lat       Float? // centroide de ciudad, nunca coordenada exacta del dispositivo
+  lng       Float?
+  birthday  String? // MM-DD
+  isMentor  Boolean  @default(false) // Salón de Mentores
+  chapterId String?
+  chapter   Chapter? @relation(fields: [chapterId], references: [id])
+  chapterRole String? // "Presidenta", "Fellow MCC"... (rol honorífico dentro del capítulo)
+
+  topics       ProfileTopic[]
+  intentTags   ProfileIntentTag[]
+  connectionsA Connection[] @relation("connA")
+  connectionsB Connection[] @relation("connB")
+
+  @@index([chapterId])
+  @@index([tierId])
+}
+
+model Connection {
+  id        String   @id @default(cuid())
+  fromId    String
+  toId      String
+  status    String   @default("PENDING") // PENDING | ACCEPTED
+  from      Profile  @relation("connA", fields: [fromId], references: [id], onDelete: Cascade)
+  to        Profile  @relation("connB", fields: [toId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([fromId, toId])
+  @@index([toId, status])
+}
+
+model Chapter { // Capítulos por país/ciudad (mapa)
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  name        String
+  country     String
+  city        String?
+  lat         Float?
+  lng         Float?
+  description String?
+  profiles    Profile[]
+  events      Event[]
+}
+
+// ───────────── Comunidad y mensajes ─────────────
+
+model Community {
+  id          String            @id @default(cuid())
+  slug        String            @unique
+  name        String
+  description String?
+  kind        String            @default("TOPIC") // GENERAL | CHAPTER | TOPIC | PENDING
+  posts       Post[]
+  members     CommunityMember[]
+}
+
+model CommunityMember {
+  communityId String
+  userId      String
+  role        String    @default("MEMBER") // MEMBER | ADMIN
+  pinned      Boolean   @default(false)
+  lastReadAt  DateTime?
+  joinedAt    DateTime  @default(now())
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([communityId, userId])
+}
+
+model Post { // hilos / muro de capítulo / preguntas a la comunidad / publicaciones
+  id          String      @id @default(cuid())
+  communityId String?
+  community   Community?  @relation(fields: [communityId], references: [id])
+  authorId    String
+  author      User        @relation(fields: [authorId], references: [id])
+  title       String?
+  body        String
+  kind        String      @default("THREAD") // THREAD | QUESTION | PUBLICATION | CHAPTER_WALL | LESSON_DISCUSSION
+  scopeId     String? // solo QUESTION
+  scope       Scope?      @relation(fields: [scopeId], references: [id])
+  lessonId    String? // solo LESSON_DISCUSSION
+  lesson      Lesson?     @relation(fields: [lessonId], references: [id])
+  attachmentUrl String?
+  attachmentName String?
+  parentId    String?
+  parent      Post?       @relation("replies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  replies     Post[]      @relation("replies")
+  createdAt   DateTime    @default(now())
+
+  topics    PostTopic[]
+  reactions PostReaction[]
+
+  @@index([communityId, createdAt])
+  @@index([lessonId])
+  @@index([kind, createdAt])
+}
+
+model PostReaction {
+  id        String   @id @default(cuid())
+  postId    String
+  userId    String
+  emoji     String
+  createdAt DateTime @default(now())
+  post      Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+}
+
+model Conversation {
+  id       String               @id @default(cuid())
+  kind     String               @default("DIRECT") // DIRECT | GROUP | CONCIERGE
+  title    String?
+  members  ConversationMember[]
+  messages Message[]
+}
+
+model ConversationMember {
+  conversationId String
+  userId         String
+  pinned         Boolean      @default(false) // "Conexiones destacadas"
+  lastReadAt     DateTime?
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id])
+  body           String?
+  kind           String       @default("TEXT") // TEXT | VOICE | FILE
+  attachmentUrl  String?
+  attachmentName String?
+  attachmentSize Int?
+  durationSec    Int? // notas de voz
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  reactions MessageReaction[]
+
+  @@index([conversationId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  userId    String
+  emoji     String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+}
+
+// ───────────── Eventos ─────────────
+
+model Event {
+  id          String          @id @default(cuid())
+  slug        String          @unique
+  title       String
+  description String?
+  kind        String          @default("HYBRID") // ONLINE | IN_PERSON | HYBRID
+  categoryId  String?
+  category    EventCategory?  @relation(fields: [categoryId], references: [id])
+  startsAt    DateTime
+  location    String?
+  coverUrl    String?
+  capacity    Int?
+  ceuCredits  Float?
+  chapterId   String?
+  chapter     Chapter?        @relation(fields: [chapterId], references: [id])
+  rsvps       EventRsvp[]
+  creditLedger CreditLedger[]
+
+  @@index([startsAt])
+}
+
+model EventRsvp {
+  eventId       String
+  userId        String
+  status        String    @default("INTERESTED") // INTERESTED | GOING
+  checkedInAt   DateTime?
+  event         Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+}
+
+model EventProposal { // "Iniciar propuesta de evento" (Fellows y Master Coaches)
+  id            String        @id @default(cuid())
+  userId        String
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  categoryId    String?
+  category      EventCategory? @relation(fields: [categoryId], references: [id])
+  proposedDate  DateTime?
+  status        String        @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt     DateTime      @default(now())
+}
+
+model CreditLedger { // horas CCEU acreditadas por asistencia
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  credits   Float
+  awardedAt DateTime @default(now())
+
+  @@unique([userId, eventId])
+}
+
+// ───────────── Academy / certificación / logros ─────────────
+
+model Program {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String // Master Speaker
+  description String?
+  status      String   @default("OPEN") // OPEN | UPCOMING | CLOSED
+  modality    String? // Virtual | Híbrida | Presencial
+  weeks       Int?
+  validity    String? // "Validez Multirregional"
+  modules     Module[]
+  cohorts     Cohort[]
+  enrollments AcademyEnrollment[]
+}
+
+model Cohort {
+  id          String   @id @default(cuid())
+  programId   String
+  program     Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  name        String // "Cohorte Otoño 2026"
+  startsAt    DateTime
+  enrollments AcademyEnrollment[]
+}
+
+model AcademyEnrollment {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  programId  String
+  program    Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
+  cohortId   String?
+  cohort     Cohort?   @relation(fields: [cohortId], references: [id])
+  tutorId    String?
+  tutor      User?     @relation("tutor", fields: [tutorId], references: [id])
+  status     String    @default("ACTIVE") // ACTIVE | COMPLETED | WITHDRAWN
+  startedAt  DateTime  @default(now())
+  completedAt DateTime?
+
+  moduleProgress ModuleProgress[]
+  submissions    Submission[]
+
+  @@unique([userId, programId])
+}
+
+model Module {
+  id        String   @id @default(cuid())
+  programId String
+  program   Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  position  Int
+  title     String
+  summary   String?
+  lessons   Lesson[]
+  progress  ModuleProgress[]
+  submissions Submission[]
+
+  @@index([programId, position])
+}
+
+// Estado del módulo por inscripción: se calcula al sembrar/actualizar, no en el cliente.
+model ModuleProgress {
+  enrollmentId String
+  moduleId     String
+  status       String    @default("LOCKED") // LOCKED | IN_PROGRESS | DONE
+  completedAt  DateTime?
+  enrollment   AcademyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  module       Module            @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@id([enrollmentId, moduleId])
+}
+
+// Evidencia audiovisual evaluada por rúbrica (comité/tutor)
+model Submission {
+  id           String    @id @default(cuid())
+  enrollmentId String
+  enrollment   AcademyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  moduleId     String
+  module       Module    @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  videoUrl     String?
+  status       String    @default("PENDING") // PENDING | APPROVED | CHANGES_REQUESTED
+  score        Int?
+  feedback     String?
+  reviewerId   String?
+  reviewer     User?     @relation("reviewer", fields: [reviewerId], references: [id])
+  createdAt    DateTime  @default(now())
+}
+
+model Lesson {
+  id          String   @id @default(cuid())
+  moduleId    String
+  module      Module   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  position    Int
+  title       String
+  summary     String?
+  videoUrl    String?
+  minutes     Int?
+  downloads   LessonDownload[]
+  progress    LessonProgress[]
+  discussions Post[]
+
+  @@index([moduleId, position])
+}
+
+model LessonDownload { // material de cátedra descargable
+  id       String @id @default(cuid())
+  lessonId String
+  lesson   Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  title    String
+  kind     String @default("PDF")
+  sizeKb   Int?
+  url      String?
+}
+
+model LessonProgress {
+  lessonId    String
+  userId      String
+  completedAt DateTime?
+  lastSecond  Int       @default(0) // segundo del video donde se quedó
+  lesson      Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([lessonId, userId])
+}
+
+model AchievementFamily { // Explorador, Speaker, Conector, Mentor, Comunidad, Colaborador...
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  name         String
+  icon         String        @default("workspace_premium")
+  description  String?
+  achievements Achievement[]
+}
+
+model Achievement {
+  id          String            @id @default(cuid())
+  familyId    String
+  family      AchievementFamily @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  key         String            @unique
+  name        String
+  description String?
+  tier        Int               @default(1)
+  goal        Int               @default(1) // meta a alcanzar (p.ej. nº de ciudades) para desbloquear
+  unlocks     UserAchievement[]
+
+  @@index([familyId, tier])
+}
+
+model UserAchievement {
+  userId        String
+  achievementId String
+  unlockedAt    DateTime    @default(now())
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievement   Achievement @relation(fields: [achievementId], references: [id], onDelete: Cascade)
+
+  @@id([userId, achievementId])
+}
+
+model Credential { // Credencial digital verificable
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  number      String    @unique
+  title       String
+  status      String    @default("ACTIVE") // ACTIVE | EXPIRED | REVOKED
+  issuedAt    DateTime  @default(now())
+  expiresAt   DateTime?
+  signedById  String? // presidente del consejo académico que firma
+  signedByName String?
+  signedByRole String?
+  verifyCode  String    @unique
+  blockNumber String? // registro público (informativo, sin blockchain real en fase 1 — ver duda D37)
+
+  competencies CredentialCompetency[]
+}
+
+model CredentialCompetency {
+  credentialId String
+  competencyId String
+  credential   Credential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  competency   Competency @relation(fields: [competencyId], references: [id], onDelete: Cascade)
+
+  @@id([credentialId, competencyId])
+}
+
+model TravelLog { // "Nuevo registro de viaje" (familia Explorador)
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation("traveler", fields: [userId], references: [id], onDelete: Cascade)
+  city           String
+  country        String
+  activityTypeId String?
+  activityType   ActivityType? @relation(fields: [activityTypeId], references: [id])
+  happenedAt     DateTime?
+  evidenceUrl    String?
+  status         String       @default("PENDING") // PENDING | VERIFIED | REJECTED
+  reviewedById   String?
+  reviewedBy     User?        @relation("reviewer", fields: [reviewedById], references: [id])
+  createdAt      DateTime     @default(now())
+
+  @@index([userId, status])
+}
