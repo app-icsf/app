@@ -177,7 +177,7 @@ function directoryRoster() {
   );
 }
 
-export async function getDiscoverPage(userId: string, q: string | undefined, offset: number) {
+export async function getDiscoverPage(userId: string, q: string | undefined, offset: number, limit = DISCOVER_PAGE_SIZE) {
   const all = await directoryRoster();
   const needle = (q ?? "").trim().toLowerCase();
   const filtered = all.filter((profile) => {
@@ -190,8 +190,9 @@ export async function getDiscoverPage(userId: string, q: string | undefined, off
     return haystack.includes(needle);
   });
   const start = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-  const profiles = filtered.slice(start, start + DISCOVER_PAGE_SIZE);
-  const nextOffset = start + DISCOVER_PAGE_SIZE < filtered.length ? start + DISCOVER_PAGE_SIZE : null;
+  const size = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 40) : DISCOVER_PAGE_SIZE;
+  const profiles = filtered.slice(start, start + size);
+  const nextOffset = start + size < filtered.length ? start + size : null;
   return { profiles, nextOffset };
 }
 

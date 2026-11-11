@@ -8,6 +8,7 @@ export default {
     authorized({ auth, request }) {
       const { pathname } = request.nextUrl;
       if (pathname.startsWith("/login")) return true;
+      if (pathname.startsWith("/api/mobile")) return true;
       if (pathname.startsWith("/credencial/verificar")) return true;
       if (pathname === "/manifest.webmanifest" || pathname === "/sw.js") return true;
       if (pathname.startsWith("/material/")) return true;
