@@ -1,31 +1,52 @@
-// Capa de datos: una función de lectura por pantalla. Todas consultan Prisma directamente — nada de
-// contenido fijo en los componentes. `cache()` evita repetir la misma consulta dentro de un mismo request
-// (p.ej. el perfil del usuario actual, usado por el layout y por la pantalla).
+// Capa de datos: una función de lectura por pantalla. El resultado se guarda en `.cache/sections`
+// (ver docs/CACHE_LOCAL.md): la siguiente visita lee el archivo y no vuelve a consultar Postgres.
+// `cache()` de React solo deduplica dentro del mismo request.
 import { cache } from "react";
 import { db } from "./db";
+import { sectionCache, TTL } from "./local-cache";
 import { resolvePlace } from "./places";
 
+export const DISCOVER_PAGE_SIZE = 8;
+
+/** Miembros reales del directorio público. El resto son cuentas de demostración y no salen en los listados. */
+const publicDirectoryUser = {
+  status: "ACTIVE" as const,
+  OR: [
+    { email: { endsWith: "@directorio.icsf.local" } },
+    { credentials: { some: { number: "M-8259EA96F37E" } } },
+  ],
+};
+
 export const getMyProfile = cache(async (userId: string) => {
-  return db.profile.findUniqueOrThrow({
-    where: { userId },
-    include: { tier: true, chapter: true, topics: { include: { topic: true } }, intentTags: { include: { tag: true } } },
-  });
+  return sectionCache(`yo-perfil-${userId}`, TTL.section, () =>
+    db.profile.findUniqueOrThrow({
+      where: { userId },
+      include: { user: { select: { name: true } }, tier: true, chapter: true, topics: { include: { topic: true } }, intentTags: { include: { tag: true } } },
+    }),
+  );
 });
+
+export function getHeaderProfile(userId: string) {
+  return sectionCache(`header-${userId}`, TTL.section, () =>
+    db.profile.findUnique({ where: { userId }, select: { avatarUrl: true, user: { select: { name: true } } } }),
+  );
+}
 
 // ── Inicio ───────────────────────────────────────────────────────────────
 export async function getHomeFeed(userId: string) {
+  return sectionCache(`inicio-${userId}`, TTL.section, async () => {
   const me = await getMyProfile(userId);
   const [birthdays, newMembers, publication, threads, event, suggestion, notifCount, agenda, academy, memberCount, credential, unlockCount, goingCount] = await Promise.all([
-    db.profile.findMany({ where: { userId: { not: userId }, birthday: { not: null } }, include: { user: true } }),
-    db.user.findMany({ where: { id: { not: userId }, createdAt: { gte: new Date(Date.now() - 30 * 86400000) } }, orderBy: { createdAt: "desc" }, take: 3, include: { profile: true } }),
-    db.post.findFirst({ where: { kind: "PUBLICATION" }, orderBy: { createdAt: "desc" }, include: { author: true } }),
-    db.post.findMany({ where: { kind: "THREAD", parentId: null }, orderBy: { createdAt: "desc" }, take: 2, include: { author: { include: { profile: true } }, _count: { select: { replies: true } } } }),
+    db.profile.findMany({ where: { userId: { not: userId }, user: publicDirectoryUser, birthday: { not: null } }, include: { user: true } }),
+    db.user.findMany({ where: { id: { not: userId }, ...publicDirectoryUser, createdAt: { gte: new Date(Date.now() - 30 * 86400000) } }, orderBy: { createdAt: "desc" }, take: 3, include: { profile: true } }),
+    db.post.findFirst({ where: { kind: "PUBLICATION", moderation: "PUBLISHED" }, orderBy: { createdAt: "desc" }, include: { author: true } }),
+    db.post.findMany({ where: { kind: "THREAD", parentId: null, moderation: "PUBLISHED" }, orderBy: { createdAt: "desc" }, take: 2, include: { author: { include: { profile: true } }, _count: { select: { replies: true } } } }),
     db.event.findFirst({ where: { startsAt: { gte: new Date() } }, orderBy: { startsAt: "asc" }, include: { category: true, chapter: true, rsvps: { where: { status: { in: ["GOING", "INTERESTED"] } }, include: { user: { include: { profile: true } } }, take: 3 } } }),
-    db.profile.findFirst({ where: { userId: { not: userId }, chapterId: me.chapterId, topics: { some: { topicId: { in: me.topics.map((t) => t.topicId) } } } }, include: { user: true, tier: true, topics: { include: { topic: true } } } }),
+    db.profile.findFirst({ where: { userId: { not: userId }, user: publicDirectoryUser, chapterId: me.chapterId, topics: { some: { topicId: { in: me.topics.map((t) => t.topicId) } } } }, include: { user: true, tier: true, topics: { include: { topic: true } } } }),
     db.notification.count({ where: { userId, readAt: null } }),
     db.event.findMany({ where: { startsAt: { gte: new Date() } }, orderBy: { startsAt: "asc" }, take: 3, include: { category: true } }),
     getAcademyHome(userId),
-    db.user.count({ where: { status: "ACTIVE" } }),
+    db.user.count({ where: publicDirectoryUser }),
     db.credential.findFirst({ where: { userId }, orderBy: { issuedAt: "desc" } }),
     db.userAchievement.count({ where: { userId } }),
     db.eventRsvp.count({ where: { userId, status: "GOING" } }),
@@ -35,30 +56,38 @@ export async function getHomeFeed(userId: string) {
   const birthdayToday = birthdays.find((b) => b.birthday === mmdd);
   const myRsvp = event ? await db.eventRsvp.findUnique({ where: { eventId_userId: { eventId: event.id, userId } } }) : null;
   return { me, birthdayToday, newMember: newMembers[0] ?? null, publication, threads, event, myRsvp, suggestion, unreadNotifications: notifCount, agenda, academy, memberCount, credential, unlockCount, goingCount };
+  });
 }
 
 // ── Comunidad ────────────────────────────────────────────────────────────
 export async function getCommunityHome(userId: string) {
+  return sectionCache(`comunidad-${userId}`, TTL.section, async () => {
   const [mine, discover] = await Promise.all([
     db.communityMember.findMany({
       where: { userId }, orderBy: { pinned: "desc" },
-      include: { community: { include: { posts: { orderBy: { createdAt: "desc" }, take: 1, include: { author: true, _count: { select: { replies: true } } } }, _count: { select: { members: true } } } } },
+      include: { community: { include: { posts: { where: { moderation: "PUBLISHED" }, orderBy: { createdAt: "desc" }, take: 1, include: { author: true, _count: { select: { replies: true } } } }, _count: { select: { members: true } } } } },
     }),
     db.community.findMany({ where: { members: { none: { userId } }, kind: { not: "PENDING" } }, include: { _count: { select: { members: true } } } }),
   ]);
   const pending = mine.filter((m) => m.community.kind === "PENDING");
   const activeMine = mine.filter((m) => m.community.kind !== "PENDING");
   return { mine: activeMine, discover, pending };
+  });
 }
 
 export async function getChapterWall(slug: string, userId: string) {
+  return sectionCache(`comunidad-${slug}-${userId}`, TTL.section, async () => {
   const community = await db.community.findUniqueOrThrow({
     where: { slug },
     include: { _count: { select: { members: true } }, members: { where: { userId }, select: { userId: true } } },
   });
   const chapter = await db.chapter.findFirst({ where: { name: community.name } });
   const posts = await db.post.findMany({
-    where: { communityId: community.id, parentId: null },
+    where: {
+      communityId: community.id,
+      parentId: null,
+      OR: [{ moderation: "PUBLISHED" }, { moderation: "REVIEW", authorId: userId }],
+    },
     orderBy: { createdAt: "desc" },
     include: {
       author: { include: { profile: { include: { tier: true } } } },
@@ -67,33 +96,39 @@ export async function getChapterWall(slug: string, userId: string) {
     },
   });
   return { community, chapter, posts, isMember: community.members.length > 0 };
+  });
 }
 
 // ── Mapa ─────────────────────────────────────────────────────────────────
 export async function getIncomingConnections(userId: string) {
+  return sectionCache(`conexiones-${userId}`, TTL.section, async () => {
   const me = await getMyProfile(userId);
   return db.connection.findMany({
     where: { toId: me.id, status: "PENDING" },
     include: { from: { include: { user: true, tier: true } } },
     orderBy: { createdAt: "desc" },
   });
+  });
 }
 
 export async function getEditCatalogs() {
-  return db.topic.findMany({ orderBy: { name: "asc" } });
+  return sectionCache("catalogo-temas", TTL.directory, () => db.topic.findMany({ orderBy: { name: "asc" } }));
 }
 
 export async function getMapData() {
+  return sectionCache("mapa-capitulos", TTL.directory, async () => {
   const chapters = await db.chapter.findMany({
-    include: { _count: { select: { profiles: true } }, events: { where: { startsAt: { gte: new Date() } }, select: { id: true } } },
+    include: { _count: { select: { profiles: { where: { user: publicDirectoryUser } } } }, events: { where: { startsAt: { gte: new Date() } }, select: { id: true } } },
   });
   const travelers = await db.travelLog.groupBy({ by: ["city"], where: { status: "VERIFIED", happenedAt: { gte: new Date(Date.now() - 7 * 86400000) } }, _count: true });
   return { chapters, travelers };
+  });
 }
 
 export async function getMapPresence() {
+  return sectionCache("mapa-presencia", TTL.directory, async () => {
   const profiles = await db.profile.findMany({
-    where: { AND: [{ city: { not: null } }, { city: { not: "" } }] },
+    where: { user: publicDirectoryUser, AND: [{ city: { not: null } }, { city: { not: "" } }] },
     select: { city: true, country: true, region: true, lat: true, lng: true },
   });
   const buckets = new Map<string, { city: string; region: string; country: string; lat: number; lng: number; count: number }>();
@@ -106,31 +141,69 @@ export async function getMapPresence() {
     else buckets.set(key, { city: place.city, region: place.region, country: place.country, lat: place.lat, lng: place.lng, count: 1 });
   }
   return [...buckets.values()];
+  });
 }
 
 export async function getChapterDetail(slug: string) {
+  return sectionCache(`mapa-capitulo-${slug}`, TTL.directory, async () => {
   const chapter = await db.chapter.findUniqueOrThrow({
     where: { slug },
-    include: { _count: { select: { profiles: true } }, events: { where: { startsAt: { gte: new Date() } }, orderBy: { startsAt: "asc" } }, profiles: { include: { user: true, tier: true }, take: 4 } },
+    include: { _count: { select: { profiles: { where: { user: publicDirectoryUser } } } }, events: { where: { startsAt: { gte: new Date() } }, orderBy: { startsAt: "asc" } }, profiles: { where: { user: publicDirectoryUser }, include: { user: true, tier: true }, take: 4 } },
   });
   const travelers = await db.travelLog.count({ where: { status: "VERIFIED", country: chapter.country, happenedAt: { gte: new Date(Date.now() - 7 * 86400000) } } });
   return { chapter, travelers };
+  });
 }
 
 // ── Descubrir ────────────────────────────────────────────────────────────
-export async function getDiscoverProfiles(userId: string, q?: string) {
-  return db.profile.findMany({
-    where: {
-      userId: { not: userId },
-      ...(q ? { OR: [{ user: { name: { contains: q } } }, { city: { contains: q } }, { country: { contains: q } }, { title: { contains: q } }] } : {}),
-    },
-    include: { user: true, tier: true, topics: { include: { topic: true } } },
-    orderBy: { user: { name: "asc" } },
+function directoryRoster() {
+  return sectionCache("directorio-publico", TTL.directory, () =>
+    db.profile.findMany({
+      where: { user: publicDirectoryUser },
+      select: {
+        id: true,
+        userId: true,
+        slug: true,
+        title: true,
+        avatarUrl: true,
+        city: true,
+        country: true,
+        tier: true,
+        user: { select: { name: true } },
+        topics: { select: { topicId: true, topic: { select: { name: true } } } },
+      },
+      orderBy: { user: { name: "asc" } },
+    }),
+  );
+}
+
+export async function getDiscoverPage(userId: string, q: string | undefined, offset: number) {
+  const all = await directoryRoster();
+  const needle = (q ?? "").trim().toLowerCase();
+  const filtered = all.filter((profile) => {
+    if (profile.userId === userId) return false;
+    if (!needle) return true;
+    const haystack = [profile.user.name, profile.city, profile.country, profile.title, ...profile.topics.map((topic) => topic.topic.name)]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(needle);
   });
+  const start = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+  const profiles = filtered.slice(start, start + DISCOVER_PAGE_SIZE);
+  const nextOffset = start + DISCOVER_PAGE_SIZE < filtered.length ? start + DISCOVER_PAGE_SIZE : null;
+  return { profiles, nextOffset };
+}
+
+export function countActiveThisWeek() {
+  return sectionCache("activos-semana", TTL.directory, () =>
+    db.user.count({ where: { lastLoginAt: { gte: new Date(Date.now() - 7 * 86400000) } } }),
+  );
 }
 
 // ── Perfil de miembro ────────────────────────────────────────────────────
 export async function getProfileBySlug(slug: string, viewerUserId: string) {
+  return sectionCache(`miembro-${slug}-${viewerUserId}`, TTL.section, async () => {
   const profile = await db.profile.findUniqueOrThrow({
     where: { slug },
     include: { user: true, tier: true, chapter: true, topics: { include: { topic: true } }, intentTags: { include: { tag: true } } },
@@ -142,10 +215,18 @@ export async function getProfileBySlug(slug: string, viewerUserId: string) {
     db.eventRsvp.count({ where: { userId: profile.userId, status: "GOING" } }),
   ]);
   return { profile, connection, achievementCount, eventsCount };
+  });
 }
 
 // ── Mensajes ─────────────────────────────────────────────────────────────
+export function countMentors(userId: string) {
+  return sectionCache(`mentores-${userId}`, TTL.section, () =>
+    db.profile.count({ where: { isMentor: true, userId: { not: userId } } }),
+  );
+}
+
 export async function getConversations(userId: string) {
+  return sectionCache(`mensajes-${userId}`, TTL.live, async () => {
   const memberships = await db.conversationMember.findMany({
     where: { userId },
     orderBy: { pinned: "desc" },
@@ -167,9 +248,11 @@ export async function getConversations(userId: string) {
     })
   );
   return withUnread;
+  });
 }
 
 export async function getConversation(id: string, userId: string) {
+  return sectionCache(`mensajes-${id}-${userId}`, TTL.live, async () => {
   const conversation = await db.conversation.findUniqueOrThrow({
     where: { id },
     include: {
@@ -179,10 +262,12 @@ export async function getConversation(id: string, userId: string) {
   });
   const other = conversation.members.find((m) => m.userId !== userId)?.user;
   return { conversation, other };
+  });
 }
 
 // ── Eventos ──────────────────────────────────────────────────────────────
 export async function getEvents(userId: string) {
+  return sectionCache(`eventos-${userId}`, TTL.section, async () => {
   const [upcoming, categories, myRsvps] = await Promise.all([
     db.event.findMany({ where: { startsAt: { gte: new Date() } }, orderBy: { startsAt: "asc" }, include: { category: true, chapter: true, rsvps: { include: { user: { include: { profile: true } } } } } }),
     db.eventCategory.findMany(),
@@ -191,31 +276,35 @@ export async function getEvents(userId: string) {
   const rsvpMap = new Map(myRsvps.map((r) => [r.eventId, r.status]));
   const me = await getMyProfile(userId).catch(() => null);
   return { upcoming, categories, rsvpMap, myChapterId: me?.chapterId ?? null };
+  });
 }
 
 // ── Preguntar / comunidad topics ─────────────────────────────────────────
 export async function getQuestionCatalog() {
+  return sectionCache("preguntar-catalogo", TTL.section, async () => {
   const [topics, scopes] = await Promise.all([db.topic.findMany({ take: 3 }), db.scope.findMany()]);
   const [certified, avgMinutes] = await Promise.all([
     db.profile.count({ where: { tier: { rank: { gte: 1 } } } }),
     Promise.resolve(45),
   ]);
   return { topics, scopes, certifiedCount: certified, avgMinutes };
+  });
 }
 
 export async function getQuestion(id: string) {
-  return db.post.findFirst({
+  return sectionCache(`preguntar-${id}`, TTL.section, () => db.post.findFirst({
     where: { id, kind: "QUESTION", parentId: null },
     include: {
       author: true,
       topics: { include: { topic: true } },
       replies: { orderBy: { createdAt: "asc" }, include: { author: true } },
     },
-  });
+  }));
 }
 
 // ── Academy ──────────────────────────────────────────────────────────────
 export async function getAcademyHome(userId: string) {
+  return sectionCache(`academy-${userId}`, TTL.section, async () => {
   const [enrollment, catalog] = await Promise.all([
     db.academyEnrollment.findFirst({
       where: { userId, status: "ACTIVE" },
@@ -233,10 +322,11 @@ export async function getAcademyHome(userId: string) {
   }
   const openPrograms = catalog.filter((p) => p.id !== enrollment?.programId);
   return { enrollment, progressPct, nextModule, openPrograms };
+  });
 }
 
 export async function getProgramRoute(userId: string) {
-  return db.academyEnrollment.findFirst({
+  return sectionCache(`academy-ruta-${userId}`, TTL.section, () => db.academyEnrollment.findFirst({
     where: { userId, status: "ACTIVE" },
     include: {
       program: { include: { modules: { orderBy: { position: "asc" }, include: { lessons: true } } } },
@@ -245,10 +335,11 @@ export async function getProgramRoute(userId: string) {
       moduleProgress: true,
       submissions: { include: { module: true } },
     },
-  });
+  }));
 }
 
 export async function getLesson(id: string, userId: string) {
+  return sectionCache(`academy-leccion-${id}-${userId}`, TTL.section, async () => {
   const lesson = await db.lesson.findUniqueOrThrow({
     where: { id },
     include: {
@@ -260,10 +351,12 @@ export async function getLesson(id: string, userId: string) {
   });
   const instructor = await db.profile.findFirst({ where: { chapterRole: { not: null } }, include: { user: true, tier: true } });
   return { lesson, instructor, myProgress: lesson.progress[0] ?? null };
+  });
 }
 
 // ── Logros ───────────────────────────────────────────────────────────────
 export async function getAchievementsHome(userId: string) {
+  return sectionCache(`logros-${userId}`, TTL.section, async () => {
   const families = await db.achievementFamily.findMany({ include: { achievements: { orderBy: { tier: "asc" }, include: { unlocks: { where: { userId } } } } } });
   const totalUnlocked = await db.userAchievement.count({ where: { userId } });
   const inProgress = families.filter((f) => {
@@ -271,9 +364,11 @@ export async function getAchievementsHome(userId: string) {
     return unlocked > 0 && unlocked < f.achievements.length;
   }).length;
   return { families, totalUnlocked, inProgress };
+  });
 }
 
 export async function getAchievementFamily(slug: string, userId: string) {
+  return sectionCache(`logros-${slug}-${userId}`, TTL.section, async () => {
   const family = await db.achievementFamily.findUniqueOrThrow({
     where: { slug },
     include: { achievements: { orderBy: { tier: "asc" }, include: { unlocks: { where: { userId } } } } },
@@ -281,27 +376,43 @@ export async function getAchievementFamily(slug: string, userId: string) {
   const activityTypes = await db.activityType.findMany();
   const travelLogs = await db.travelLog.findMany({ where: { userId }, orderBy: { createdAt: "desc" }, include: { activityType: true } });
   return { family, activityTypes, travelLogs };
+  });
 }
 
 export async function getLatestUnlock(userId: string) {
-  return db.userAchievement.findFirst({ where: { userId }, orderBy: { unlockedAt: "desc" }, include: { achievement: { include: { family: true } } } });
+  return sectionCache(`logros-ultimo-${userId}`, TTL.section, () =>
+    db.userAchievement.findFirst({ where: { userId }, orderBy: { unlockedAt: "desc" }, include: { achievement: { include: { family: true } } } }),
+  );
 }
 
 // ── Credencial ───────────────────────────────────────────────────────────
 export async function getCredential(userId: string) {
-  return db.credential.findFirst({ where: { userId }, orderBy: { issuedAt: "desc" }, include: { competencies: { include: { competency: true } }, user: { include: { profile: true } } } });
+  return sectionCache(`credencial-${userId}`, TTL.section, () =>
+    db.credential.findFirst({ where: { userId }, orderBy: { issuedAt: "desc" }, include: { competencies: { include: { competency: true } }, user: { include: { profile: true } } } }),
+  );
 }
 
 export async function getCredentialByVerifyCode(code: string) {
-  return db.credential.findUnique({ where: { verifyCode: code }, include: { competencies: { include: { competency: true } }, user: { include: { profile: true } } } });
+  return sectionCache(`credencial-verificar-${code}`, TTL.section, () =>
+    db.credential.findUnique({ where: { verifyCode: code }, include: { competencies: { include: { competency: true } }, user: { include: { profile: true } } } }),
+  );
 }
 
 // ── Notificaciones ───────────────────────────────────────────────────────
 export async function getNotifications(userId: string) {
-  return db.notification.findMany({ where: { userId }, orderBy: { createdAt: "desc" } });
+  return sectionCache(`notificaciones-${userId}`, TTL.live, () =>
+    db.notification.findMany({ where: { userId }, orderBy: { createdAt: "desc" } }),
+  );
+}
+
+export function getUnreadNotificationCount(userId: string) {
+  return sectionCache(`notificaciones-count-${userId}`, TTL.live, () =>
+    db.notification.count({ where: { userId, readAt: null } }),
+  );
 }
 
 export async function getUnreadMessageCount(userId: string) {
+  return sectionCache(`mensajes-no-leidos-${userId}`, TTL.live, async () => {
   const memberships = await db.conversationMember.findMany({ where: { userId }, select: { conversationId: true, lastReadAt: true } });
   const counts = await Promise.all(
     memberships.map((m) =>
@@ -311,88 +422,106 @@ export async function getUnreadMessageCount(userId: string) {
     )
   );
   return counts.reduce((a, n) => a + n, 0);
+  });
 }
 
 // ── Búsqueda global ──────────────────────────────────────────────────────
 export async function globalSearch(q: string, userId: string) {
   if (!q.trim()) return { people: [], events: [], posts: [] };
+  return sectionCache(`buscar-${userId}-${q}`, TTL.section, async () => {
   const [people, events, posts] = await Promise.all([
-    db.profile.findMany({ where: { userId: { not: userId }, OR: [{ user: { name: { contains: q } } }, { city: { contains: q } }] }, include: { user: true, tier: true }, take: 5 }),
+    db.profile.findMany({ where: { userId: { not: userId }, user: publicDirectoryUser, OR: [{ user: { name: { contains: q } } }, { city: { contains: q } }] }, include: { user: true, tier: true }, take: 5 }),
     db.event.findMany({ where: { title: { contains: q } }, take: 5 }),
-    db.post.findMany({ where: { body: { contains: q } }, include: { author: true }, take: 5 }),
+    db.post.findMany({ where: { body: { contains: q }, moderation: "PUBLISHED" }, include: { author: true }, take: 5 }),
   ]);
   return { people, events, posts };
+  });
 }
 
 export async function adminDashboard() {
-  const [users, pendingTravel, pendingProposals, events, audit] = await Promise.all([
+  return sectionCache("admin-inicio", TTL.admin, async () => {
+  const [users, pendingTravel, pendingProposals, pendingReviews, events, audit] = await Promise.all([
     db.user.count(),
     db.travelLog.count({ where: { status: "PENDING" } }),
     db.eventProposal.count({ where: { status: "PENDING" } }),
+    db.post.count({ where: { moderation: "REVIEW" } }),
     db.event.count({ where: { startsAt: { gte: new Date() } } }),
     db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take: 8, include: { actor: true } }),
   ]);
-  return { users, pendingTravel, pendingProposals, events, audit };
+  return { users, pendingTravel, pendingProposals, pendingReviews, events, audit };
+  });
+}
+
+export async function adminReviews() {
+  return sectionCache("admin-revision", TTL.admin, () => db.post.findMany({
+    where: { moderation: "REVIEW", parentId: null },
+    orderBy: { createdAt: "asc" },
+    include: { author: true, community: true },
+  }));
 }
 
 export async function adminUsers(q?: string) {
-  return db.user.findMany({
+  return sectionCache(`admin-usuarios-${q ?? ""}`, TTL.admin, () => db.user.findMany({
     where: q ? { OR: [{ name: { contains: q } }, { email: { contains: q } }] } : undefined,
     include: { role: true, profile: true },
     orderBy: { createdAt: "desc" },
-  });
+  }));
 }
 
 export async function adminUserDetail(id: string) {
-  return db.user.findUniqueOrThrow({
+  return sectionCache(`admin-usuario-${id}`, TTL.admin, () => db.user.findUniqueOrThrow({
     where: { id },
     include: { role: true, profile: { include: { tier: true } }, credentials: true },
-  });
+  }));
 }
 
 export async function adminRoles() {
-  return db.role.findMany({ include: { _count: { select: { users: true } } } });
+  return sectionCache("admin-roles", TTL.admin, () => db.role.findMany({ include: { _count: { select: { users: true } } } }));
 }
 
 export async function adminProposals() {
-  return db.eventProposal.findMany({
+  return sectionCache("admin-propuestas", TTL.admin, () => db.eventProposal.findMany({
     orderBy: { createdAt: "desc" },
     include: { user: true, category: true },
-  });
+  }));
 }
 
 export async function adminTravelLogs() {
-  return db.travelLog.findMany({
+  return sectionCache("admin-viajes", TTL.admin, () => db.travelLog.findMany({
     orderBy: { createdAt: "desc" },
     include: { user: true, activityType: true, reviewedBy: true },
-  });
+  }));
 }
 
 export async function adminEventsCatalog() {
+  return sectionCache("admin-eventos", TTL.admin, async () => {
   const [events, categories, chapters] = await Promise.all([
     db.event.findMany({ orderBy: { startsAt: "desc" }, include: { category: true, chapter: true, _count: { select: { rsvps: true } } } }),
     db.eventCategory.findMany(),
     db.chapter.findMany(),
   ]);
   return { events, categories, chapters };
+  });
 }
 
 export async function adminAudit(take = 80) {
-  return db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take, include: { actor: true } });
+  return sectionCache(`admin-auditoria-${take}`, TTL.admin, () =>
+    db.auditLog.findMany({ orderBy: { createdAt: "desc" }, take, include: { actor: true } }),
+  );
 }
 
 export async function adminPendingGroups() {
-  return db.community.findMany({
+  return sectionCache("admin-grupos", TTL.admin, () => db.community.findMany({
     where: { kind: "PENDING" },
     include: { _count: { select: { members: true } }, members: { take: 1, include: { user: true } } },
     orderBy: { name: "asc" },
-  });
+  }));
 }
 
 export async function myPublishCommunities(userId: string) {
-  return db.communityMember.findMany({
+  return sectionCache(`publicar-${userId}`, TTL.section, () => db.communityMember.findMany({
     where: { userId, community: { kind: { not: "PENDING" } } },
     include: { community: true },
     orderBy: { pinned: "desc" },
-  });
+  }));
 }

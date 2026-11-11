@@ -1,8 +1,10 @@
 .next
+.cache
 node_modules
 .env
 .env.*
 !.env.example
+github.credentials.local
 prisma/*.db
 prisma/*.db-journal
 *.tsbuildinfo

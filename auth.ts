@@ -45,12 +45,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async jwt({ token, user }) {
       const now = Date.now();
       if (user?.email || (token.checkedAt as number | undefined ?? 0) + REVALIDATE_MS < now) {
-        const access = await checkAccess((user?.email ?? token.email) as string);
-        if (!access.ok) return null; // acceso revocado / vencido → se cierra la sesión
-        token.uid = access.user.id;
-        token.role = access.user.roleKey;
-        token.perms = await loadPermissions(access.user.id);
-        token.checkedAt = now;
+        try {
+          const access = await checkAccess((user?.email ?? token.email) as string);
+          if (!access.ok) return null; // acceso revocado / vencido → se cierra la sesión
+          token.uid = access.user.id;
+          token.name = access.user.name;
+          token.role = access.user.roleKey;
+          token.perms = await loadPermissions(access.user.id);
+          token.checkedAt = now;
+        } catch (err) {
+          // Un corte momentáneo de la base no debe borrar la sesión ni dejar la pantalla en blanco.
+          if (!token.uid) throw err;
+        }
       }
       return token;
     },

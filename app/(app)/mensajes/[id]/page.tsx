@@ -29,7 +29,7 @@ export default async function Chat({ params }: { params: Promise<{ id: string }>
       <main className="flex-1 w-full bg-surface pt-16 pb-safe flex flex-col">
         {other && (
           <div className="px-margin py-2 bg-surface-container-low border-b border-border-subtle flex items-center gap-2.5">
-            <Avatar name={other.name} size={32} />
+            <Avatar name={other.name} src={other.profile?.avatarUrl} size={32} />
             <p className="text-body-sm text-body-sm text-on-surface-variant">{other.profile?.title ?? "Miembro ICSF"} · {other.profile?.city ?? "En línea"}</p>
           </div>
         )}

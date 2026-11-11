@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ICSF — La app de la federación</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #eef0ff;
+    --muted: #9aa6c0;
+    --navy: #0e1c2f;
+    --deep: #070d18;
+    --blue: #0066ff;
+    --blue-2: #3063ff;
+    --gold: #eec14b;
+    --line: rgba(186, 199, 225, 0.16);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    color: var(--ink);
+    font-family: "Plus Jakarta Sans", sans-serif;
+    background: var(--deep);
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  button, .btn { font-family: inherit; }
+
+  .progress {
+    position: fixed; inset: 0 auto auto 0; height: 3px; width: 0;
+    background: linear-gradient(90deg, var(--gold), var(--blue-2));
+    z-index: 50; transform-origin: left;
+  }
+
+  nav {
+    position: fixed; top: 18px; left: 50%; transform: translateX(-50%);
+    z-index: 40; width: min(1120px, calc(100% - 28px));
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px 10px 16px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: rgba(7, 13, 24, 0.62);
+    backdrop-filter: blur(18px);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: 0.08em; }
+  .brand img {
+    height: 38px; width: auto; display: block;
+    background: #fff; border-radius: 999px; padding: 3px 10px 3px 4px;
+  }
+  .nav-links { display: flex; gap: 22px; color: var(--muted); font-size: 13px; font-weight: 600; }
+  .nav-links a:hover { color: white; }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 42px; padding: 0 18px; border-radius: 999px; border: 0; cursor: pointer;
+    background: linear-gradient(180deg, #3d7bff, var(--blue));
+    color: white; font-weight: 700; font-size: 14px;
+    box-shadow: 0 10px 30px rgba(0, 102, 255, 0.35);
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(0, 102, 255, 0.45); }
+  .btn.ghost {
+    background: transparent; color: var(--ink);
+    border: 1px solid var(--line); box-shadow: none;
+  }
+
+  .hero {
+    position: relative; min-height: 100vh;
+    display: grid; place-items: center;
+    padding: 120px 24px 80px;
+    isolation: isolate;
+  }
+  canvas#sky { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -2; }
+  .aurora {
+    position: absolute; inset: auto; width: 640px; height: 640px; border-radius: 50%;
+    filter: blur(40px); opacity: .55; z-index: -1; pointer-events: none;
+    background: radial-gradient(circle, rgba(0,102,255,.55), transparent 68%);
+    animation: drift 14s ease-in-out infinite;
+  }
+  .aurora.b {
+    width: 420px; height: 420px; right: 8%; top: 18%;
+    background: radial-gradient(circle, rgba(238,193,75,.28), transparent 70%);
+    animation-delay: -6s;
+  }
+  @keyframes drift {
+    0%, 100% { transform: translate3d(-8%, 0, 0) scale(1); }
+    50% { transform: translate3d(10%, 6%, 0) scale(1.08); }
+  }
+
+  .hero-grid {
+    width: min(1120px, 100%);
+    display: grid; grid-template-columns: 1.05fr .95fr; gap: 48px; align-items: center;
+  }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--gold); font-size: 12px; font-weight: 700; letter-spacing: .16em;
+    text-transform: uppercase;
+  }
+  .kicker i {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 0 0 rgba(238,193,75,.7);
+    animation: ping 2.2s infinite;
+  }
+  @keyframes ping {
+    70% { box-shadow: 0 0 0 10px rgba(238,193,75,0); }
+    100% { box-shadow: 0 0 0 0 rgba(238,193,75,0); }
+  }
+  h1 {
+    margin: 14px 0 0; font-size: clamp(42px, 6vw, 76px); line-height: .96;
+    letter-spacing: -0.045em; font-weight: 800;
+  }
+  h1 .line { display: block; overflow: hidden; }
+  h1 .line span {
+    display: block;
+    animation: rise .9s cubic-bezier(.2,.8,.2,1) both;
+  }
+  h1 .line:nth-child(2) span { animation-delay: .12s; }
+  h1 .line:nth-child(3) span { animation-delay: .24s; color: transparent;
+    background: linear-gradient(100deg, #fff 20%, var(--gold) 45%, #9ec0ff 70%, #fff 85%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text;
+    animation: rise .9s .24s cubic-bezier(.2,.8,.2,1) both, sheen 4.5s 1s linear infinite;
+  }
+  @keyframes rise { from { transform: translateY(110%); } to { transform: none; } }
+  @keyframes sheen { to { background-position: -220% 0; } }
+  .lede {
+    margin: 22px 0 0; max-width: 520px; color: var(--muted);
+    font-size: 18px; line-height: 1.55;
+  }
+  .cta-row { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+  .fine { margin-top: 16px; color: #6e7b98; font-size: 13px; }
+
+  .stage { position: relative; height: 560px; display: grid; place-items: center; }
+  .orbit {
+    position: absolute; border-radius: 50%;
+    border: 1px solid rgba(186,199,225,.25);
+    animation: spin 22s linear infinite;
+  }
+  .orbit.o1 { width: 460px; height: 460px; }
+  .orbit.o2 { width: 340px; height: 340px; animation-duration: 16s; animation-direction: reverse; border-style: dashed; }
+  .orbit span {
+    position: absolute; top: -5px; left: 50%; width: 10px; height: 10px; border-radius: 50%;
+    background: var(--gold); box-shadow: 0 0 16px var(--gold);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .globe {
+    width: 250px; height: 250px; border-radius: 50%; position: relative;
+    background:
+      radial-gradient(circle at 32% 30%, rgba(255,255,255,.55), transparent 18%),
+      radial-gradient(circle at 50% 55%, #3d8dff, #06357a 62%, #02142e 100%);
+    box-shadow: inset -24px -18px 40px rgba(0,0,0,.45), 0 0 80px rgba(0,102,255,.45);
+    overflow: hidden; animation: floaty 6s ease-in-out infinite;
+  }
+  .globe::before, .globe::after {
+    content: ""; position: absolute; inset: -20%;
+    background:
+      radial-gradient(ellipse at 30% 40%, transparent 28%, rgba(255,255,255,.16) 29%, transparent 31%),
+      radial-gradient(ellipse at 62% 58%, transparent 22%, rgba(255,255,255,.12) 23%, transparent 25%),
+      repeating-linear-gradient(90deg, transparent 0 18px, rgba(255,255,255,.08) 18px 19px),
+      repeating-linear-gradient(0deg, transparent 0 18px, rgba(255,255,255,.08) 18px 19px);
+    animation: spin 28s linear infinite;
+  }
+  .ring {
+    position: absolute; inset: 18px -28px; border-radius: 50%;
+    border: 6px solid rgba(226,232,240,.75);
+    transform: rotate(-24deg);
+    box-shadow: 0 0 18px rgba(180,210,255,.4);
+  }
+  @keyframes floaty { 50% { transform: translateY(-12px); } }
+
+  .marquee {
+    border-block: 1px solid var(--line);
+    background: rgba(14,28,47,.65);
+    overflow: hidden; padding: 16px 0;
+  }
+  .track { display: flex; gap: 42px; width: max-content; animation: slide 28s linear infinite; }
+  .track b { font-weight: 700; letter-spacing: .14em; font-size: 13px; color: #c9d4ee; text-transform: uppercase; }
+  .track b em { color: var(--gold); font-style: normal; margin-right: 10px; }
+  @keyframes slide { to { transform: translateX(-50%); } }
+
+  section { width: min(1120px, calc(100% - 40px)); margin: 0 auto; padding: 96px 0; }
+  .eyebrow { color: var(--gold); font-size: 12px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+  h2 { margin: 10px 0 0; font-size: clamp(32px, 4vw, 52px); letter-spacing: -.035em; line-height: 1.05; }
+  .sub { color: var(--muted); max-width: 560px; line-height: 1.6; }
+
+  .split { display: grid; grid-template-columns: .9fr 1.1fr; gap: 56px; align-items: center; }
+  .phone {
+    width: 280px; height: 560px; margin: 0 auto; border-radius: 36px; padding: 12px;
+    background: linear-gradient(180deg, #1c2c44, #0a1220);
+    border: 1px solid rgba(255,255,255,.16);
+    box-shadow: 0 40px 80px rgba(0,0,0,.45), inset 0 0 0 1px rgba(255,255,255,.04);
+    position: relative;
+  }
+  .phone .notch {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    width: 92px; height: 18px; border-radius: 20px; background: #05080f; z-index: 2;
+  }
+  .screen {
+    height: 100%; border-radius: 26px; overflow: hidden; background: #f6f7fb; color: #131b2e;
+    position: relative;
+  }
+  .screen .top {
+    background: #0e1c2f; color: white; padding: 36px 16px 14px; font-weight: 700;
+  }
+  .card {
+    margin: 12px; background: white; border-radius: 16px; padding: 12px;
+    box-shadow: 0 8px 24px rgba(19,27,46,.06);
+  }
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: #eef2ff; color: #0039b5; border-radius: 999px; padding: 4px 8px; font-size: 12px; font-weight: 700; }
+  .screens { position: relative; height: 100%; }
+  .pane { position: absolute; inset: 0; opacity: 0; transform: translateY(12px); transition: .6s ease; }
+  .pane.on { opacity: 1; transform: none; }
+  .mapdot {
+    width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center;
+    background: #0048e1; color: white; font-weight: 800; position: absolute;
+    box-shadow: 0 10px 24px rgba(0,72,225,.35);
+    animation: pop 2.8s ease-in-out infinite;
+  }
+  @keyframes pop { 50% { transform: scale(1.08); } }
+
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 36px; }
+  .tile {
+    position: relative; overflow: hidden;
+    padding: 22px; border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+    border: 1px solid var(--line);
+    min-height: 190px;
+    transform: translateY(24px); opacity: 0;
+  }
+  .tile.in { animation: in .7s cubic-bezier(.2,.7,.2,1) forwards; }
+  @keyframes in { to { opacity: 1; transform: none; } }
+  .tile:hover { border-color: rgba(0,102,255,.5); }
+  .tile .n { font-size: 13px; color: var(--gold); font-weight: 800; letter-spacing: .12em; }
+  .tile h3 { margin: 12px 0 8px; font-size: 22px; letter-spacing: -.02em; }
+  .tile p { margin: 0; color: var(--muted); line-height: 1.5; font-size: 14px; }
+  .shine {
+    position: absolute; inset: 0 auto 0 -40%; width: 30%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+    transform: skewX(-18deg); animation: sweep 5.5s ease-in-out infinite;
+  }
+  @keyframes sweep { 0%, 55% { left: -40%; } 100% { left: 130%; } }
+
+  .band {
+    margin-top: 20px; border-radius: 32px; padding: 36px;
+    background:
+      radial-gradient(600px 200px at 90% 0%, rgba(238,193,75,.2), transparent 60%),
+      linear-gradient(160deg, #10243f, #07111f);
+    border: 1px solid var(--line);
+    display: grid; grid-template-columns: 1.3fr .7fr; gap: 24px; align-items: center;
+  }
+  .seal {
+    width: 180px; height: 220px; margin-left: auto; border-radius: 18px;
+    background: linear-gradient(180deg, #f8f1dc, #fff);
+    color: #1a1406; padding: 16px; position: relative;
+    animation: floaty 5.5s ease-in-out infinite;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35);
+  }
+  .seal .bar { height: 8px; border-radius: 8px; background: #0e1c2f; margin-bottom: 10px; }
+  .seal small { letter-spacing: .14em; font-weight: 800; color: #8a6a12; }
+  .qr {
+    margin-top: 16px; height: 92px; border-radius: 10px;
+    background:
+      linear-gradient(90deg, #111 8px, transparent 8px) 0 0 / 16px 16px,
+      linear-gradient(#111 8px, transparent 8px) 0 0 / 16px 16px,
+      #fff;
+    animation: flicker 3s steps(2) infinite;
+  }
+  @keyframes flicker { 50% { filter: contrast(1.2); } }
+
+  footer {
+    border-top: 1px solid var(--line); padding: 28px 20px 40px;
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    width: min(1120px, calc(100% - 40px)); margin: 0 auto; color: var(--muted); font-size: 13px;
+  }
+
+  @media (max-width: 900px) {
+    .nav-links { display: none; }
+    .hero-grid, .split, .grid, .band { grid-template-columns: 1fr; }
+    .stage { height: 420px; }
+    .orbit.o1 { width: 320px; height: 320px; }
+    .seal { margin: 0 auto; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .tile { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+<div class="progress" id="progress"></div>
+<nav>
+  <a class="brand" href="#top"><img src="logo-icsf.png" alt="ICSF" /></a>
+  <div class="nav-links">
+    <a href="#app">La app</a>
+    <a href="#red">La red</a>
+    <a href="#credencial">Credencial</a>
+  </div>
+  <a class="btn" href="#app">Ver el movimiento</a>
+</nav>
+
+<header class="hero" id="top">
+  <canvas id="sky"></canvas>
+  <div class="aurora"></div>
+  <div class="aurora b"></div>
+  <div class="hero-grid">
+    <div>
+      <div class="kicker"><i></i> International Coaching &amp; Speaker Federation</div>
+      <h1>
+        <span class="line"><span>La casa de</span></span>
+        <span class="line"><span>quienes hablan</span></span>
+        <span class="line"><span>al mundo.</span></span>
+      </h1>
+      <p class="lede">La app de miembros ICSF reúne capítulos, comunidades, Academy, eventos y tu credencial. La ciudad se ve en el mapa. La ubicación exacta, no.</p>
+      <div class="cta-row">
+        <a class="btn" href="#red">Entrar a la red</a>
+        <a class="btn ghost" href="#app">Recorrer la app</a>
+      </div>
+      <p class="fine">Acceso por la federación. Sin registro abierto.</p>
+    </div>
+    <div class="stage" aria-hidden="true">
+      <div class="orbit o1"><span></span></div>
+      <div class="orbit o2"><span style="background:#7eb6ff;box-shadow:0 0 16px #7eb6ff"></span></div>
+      <div class="globe"><div class="ring"></div></div>
+    </div>
+  </div>
+</header>
+
+<div class="marquee" aria-hidden="true">
+  <div class="track" id="track"></div>
+</div>
+
+<section id="app">
+  <div class="split">
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="screens">
+        <div class="pane on" data-screen>
+          <div class="screen">
+            <div class="top">Inicio · Hoy en ICSF</div>
+            <div class="card"><strong>Nuevo miembro</strong><p style="margin:6px 0 0;color:#444">Capítulo México da la bienvenida.</p></div>
+            <div class="card"><strong>Evento</strong><p style="margin:6px 0 0;color:#444">Cumbre de oratoria · RSVP abierto.</p><div class="chip" style="margin-top:8px">Confirmar</div></div>
+            <div class="card"><strong>Academy</strong><p style="margin:6px 0 0;color:#444">Lección de storytelling lista.</p></div>
+          </div>
+        </div>
+        <div class="pane" data-screen>
+          <div class="screen" style="background:#e7eefc">
+            <div class="top">Mapa · México</div>
+            <div style="position:relative;height:430px">
+              <div class="mapdot" style="left:46%;top:38%">8</div>
+              <div class="mapdot" style="left:28%;top:62%;animation-delay:.4s;background:#0e1c2f">4</div>
+              <div class="mapdot" style="left:62%;top:58%;animation-delay:.8s;background:#d97706">3</div>
+              <p style="position:absolute;bottom:16px;left:16px;right:16px;margin:0;font-size:13px;color:#334">Nuevo León 8 · Guadalupe 4 · San Nicolás 3 · Monterrey 1</p>
+            </div>
+          </div>
+        </div>
+        <div class="pane" data-screen>
+          <div class="screen">
+            <div class="top">Comunidad</div>
+            <div class="card"><strong>Sofía</strong><p style="margin:6px 0 0">¿Quién comparte material de apertura para keynote?</p><div class="chip" style="margin-top:8px">👏 Sofía</div></div>
+            <div class="card"><strong>Asistente ICSF</strong><p style="margin:6px 0 0;color:#444">Calienta la voz en 8 minutos. Tema: Oratoria de Alto Impacto.</p></div>
+          </div>
+        </div>
+        <div class="pane" data-screen>
+          <div class="screen" style="background:#0e1c2f;color:white">
+            <div class="top" style="background:transparent">Credencial</div>
+            <div class="card" style="background:#f8f1dc;color:#1a1406">
+              <small style="letter-spacing:.14em;font-weight:800;color:#8a6a12">FELLOW</small>
+              <h3 style="margin:8px 0">Miembro ICSF</h3>
+              <p style="margin:0">Código verificable. Sin blockchain.</p>
+              <div class="qr"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="eyebrow">Dentro de la app</div>
+      <h2>Un escenario. Toda la federación.</h2>
+      <p class="sub">Inicio, mapa, comunidad y credencial se relevan solos. Cada pantalla es la misma app que usan los miembros: capítulos, una reacción con nombre y un asistente que responde al momento.</p>
+    </div>
+  </div>
+</section>
+
+<section id="red">
+  <div class="eyebrow">La red</div>
+  <h2>Hecha para coaches y speakers.</h2>
+  <div class="grid">
+    <article class="tile"><span class="shine"></span><div class="n">01</div><h3>Capítulos</h3><p>México, Costa Rica, Colombia, España. La conversación vive en el capítulo y en los grupos de oficio.</p></article>
+    <article class="tile"><span class="shine"></span><div class="n">02</div><h3>Ciudad, no GPS</h3><p>El mapa suma personas por país, estado y ciudad. San Nicolás, Guadalupe y Monterrey se distinguen al acercarse.</p></article>
+    <article class="tile"><span class="shine"></span><div class="n">03</div><h3>Comunidad</h3><p>Publicas en tu espacio. Una reacción por comentario, y el nombre de quien reacciona queda a la vista.</p></article>
+    <article class="tile"><span class="shine"></span><div class="n">04</div><h3>Preguntar</h3><p>El asistente responde y señala el tema. Si el texto es delicado, pasa a un administrador antes de publicarse.</p></article>
+    <article class="tile"><span class="shine"></span><div class="n">05</div><h3>Academy</h3><p>Lecciones, inscripción y avance. La formación de la federación, junto al resto de la membresía.</p></article>
+    <article class="tile"><span class="shine"></span><div class="n">06</div><h3>Eventos</h3><p>Cumbres, RSVP y propuesta de actividades. El calendario de quienes están en el escenario.</p></article>
+  </div>
+</section>
+
+<section id="credencial">
+  <div class="band">
+    <div>
+      <div class="eyebrow">Credencial</div>
+      <h2>Tu nombre, con sello de la federación.</h2>
+      <p class="sub">La credencial se verifica con un código de ICSF. La vigencia la administra la federación. El acceso no se abre solo: el alta llega desde el portal.</p>
+      <div class="cta-row">
+        <a class="btn" href="#top">Volver al inicio</a>
+      </div>
+    </div>
+    <div class="seal" aria-hidden="true">
+      <div class="bar"></div>
+      <small>ICSF</small>
+      <h3 style="margin:10px 0 4px;letter-spacing:-.03em">Credencial de miembro</h3>
+      <p style="margin:0;font-size:13px">Vigente · verificable</p>
+      <div class="qr"></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <span>ICSF · International Coaching &amp; Speaker Federation</span>
+  <span>App de miembros</span>
+</footer>
+
+<script>
+  const sky = document.getElementById("sky");
+  const ctx = sky.getContext("2d");
+  const stars = Array.from({ length: 80 }, () => ({
+    x: Math.random(), y: Math.random(), r: Math.random() * 1.4 + .2, v: Math.random() * .15 + .02
+  }));
+  function paint() {
+    const w = sky.width = sky.offsetWidth * devicePixelRatio;
+    const h = sky.height = sky.offsetHeight * devicePixelRatio;
+    ctx.clearRect(0, 0, w, h);
+    for (const s of stars) {
+      s.y -= s.v / 400;
+      if (s.y < 0) s.y = 1;
+      ctx.beginPath();
+      ctx.fillStyle = "rgba(226,234,255,.85)";
+      ctx.arc(s.x * w, s.y * h, s.r * devicePixelRatio, 0, 7);
+      ctx.fill();
+    }
+    if (!matchMedia("(prefers-reduced-motion: reduce)").matches) requestAnimationFrame(paint);
+  }
+  paint();
+
+  const cities = ["México", "Nuevo León", "Guadalupe", "San Nicolás", "Monterrey", "Costa Rica", "Bogotá", "Madrid", "Academy", "Credencial", "Capítulos", "Oratoria"];
+  const track = document.getElementById("track");
+  track.innerHTML = [...cities, ...cities].map((c) => `<b><em>✦</em>${c}</b>`).join("");
+
+  const panes = [...document.querySelectorAll("[data-screen]")];
+  let i = 0;
+  setInterval(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    panes[i].classList.remove("on");
+    i = (i + 1) % panes.length;
+    panes[i].classList.add("on");
+  }, 2800);
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach((e, n) => {
+      if (!e.isIntersecting) return;
+      e.target.style.animationDelay = (n * 80) + "ms";
+      e.target.classList.add("in");
+      io.unobserve(e.target);
+    });
+  }, { threshold: .2 });
+  document.querySelectorAll(".tile").forEach((t) => io.observe(t));
+
+  const bar = document.getElementById("progress");
+  addEventListener("scroll", () => {
+    const max = document.documentElement.scrollHeight - innerHeight;
+    bar.style.width = (scrollY / max * 100) + "%";
+  }, { passive: true });
+</script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 import Image from "next/image";
 import Link from "next/link";
+import { getHeaderProfile } from "@/lib/data";
 import HeaderBell from "./HeaderBell";
 import HeaderChat from "./HeaderChat";
 
-export default function RootHeader({ userId, label, showSearch = false }: { userId: string; label: string; showSearch?: boolean }) {
+export default async function RootHeader({ userId, label, showSearch = false }: { userId: string; label: string; showSearch?: boolean }) {
+  const me = await getHeaderProfile(userId);
   return (
     <header className="fixed top-0 inset-x-0 z-50 bg-primary-container/95 backdrop-blur-xl pt-safe">
       <div className="h-16 px-margin flex items-center justify-between gap-space-sm">
@@ -19,8 +21,13 @@ export default function RootHeader({ userId, label, showSearch = false }: { user
           )}
           <HeaderChat userId={userId} />
           <HeaderBell userId={userId} />
-          <Link href="/yo" className="w-8 h-8 rounded-full bg-honor-amber-soft flex items-center justify-center shrink-0 ml-1 ring-1 ring-ambassador-gold/30" aria-label="Mi perfil">
-            <span className="material-symbols-outlined filled text-ambassador-gold text-[18px]">person</span>
+          <Link href="/yo" className="w-8 h-8 rounded-full bg-honor-amber-soft flex items-center justify-center shrink-0 ml-1 ring-1 ring-ambassador-gold/30 overflow-hidden" aria-label="Mi perfil">
+            {me?.avatarUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={me.avatarUrl} alt={me.user.name} className="w-full h-full object-cover object-top" />
+            ) : (
+              <span className="material-symbols-outlined filled text-ambassador-gold text-[18px]">person</span>
+            )}
           </Link>
         </div>
       </div>

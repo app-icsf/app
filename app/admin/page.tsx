@@ -13,6 +13,7 @@ export default async function AdminHome() {
         {[
           ["Usuarios", d.users, "/admin/usuarios"],
           ["Viajes pendientes", d.pendingTravel, "/admin/viajes"],
+          ["Textos en revisión", d.pendingReviews, "/admin/revision"],
           ["Propuestas", d.pendingProposals, "/admin/propuestas"],
           ["Eventos próximos", d.events, "/admin/eventos"],
         ].map(([label, n, href]) => (

@@ -8,6 +8,7 @@ const MESSAGES: Record<string, string> = {
   not_started: "Tu acceso aún no está vigente.",
   expired: "Tu vigencia ha terminado. Contacta a la Secretaría ICSF para renovarla.",
   credentials: "Correo o contraseña incorrectos, o acceso no vigente.",
+  database: "No hay conexión con la base de datos. Espera un momento y vuelve a entrar.",
 };
 
 // Splash y acceso (rediseño "Global Luminary"). Sin registro: solo correos dados de alta por la Secretaría / portal admin.
@@ -25,7 +26,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
         redirectTo: "/",
       });
     } catch (e) {
-      if (e instanceof AuthError) redirect("/login?error=credentials");
+      if (e instanceof AuthError) {
+        const detail = `${e.message} ${e.cause instanceof Error ? e.cause.message : ""}`;
+        if (/reach database|ECONN|P1001|timeout|pooler/i.test(detail)) redirect("/login?error=database");
+        redirect("/login?error=credentials");
+      }
       throw e;
     }
     redirect("/");

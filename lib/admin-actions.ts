@@ -1,6 +1,7 @@
 "use server";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
+import { clearLocalCache } from "./local-cache";
 import { redirect } from "next/navigation";
 import { db } from "./db";
 import { requirePermission } from "./session";
@@ -9,8 +10,10 @@ import { slugify, unlockExplorador } from "./slug";
 import { resolvePlace } from "./places";
 
 function revalidateAdmin() {
+  clearLocalCache();
   revalidatePath("/admin");
   revalidatePath("/admin/usuarios");
+  revalidatePath("/admin/revision");
   revalidatePath("/admin/propuestas");
   revalidatePath("/admin/viajes");
   revalidatePath("/admin/eventos");
@@ -192,4 +195,24 @@ export async function adminRejectGroup(id: string) {
   await audit(me.id, "community.reject", id, { name: community.name });
   revalidateAdmin();
   revalidatePath("/comunidad");
+}
+
+export async function adminResolveReview(postId: string, approve: boolean) {
+  const me = await requirePermission("community.moderate");
+  const post = await db.post.findUnique({ where: { id: postId }, include: { community: true } });
+  if (!post || post.moderation !== "REVIEW") return;
+  await db.post.update({ where: { id: postId }, data: { moderation: approve ? "PUBLISHED" : "REJECTED" } });
+  await notify(
+    post.authorId,
+    "COMMUNITY",
+    approve ? "Texto publicado" : "Texto no publicado",
+    approve ? "Un administrador publicó tu texto." : "Un administrador no publicó tu texto. Puedes reformularlo.",
+    post.community?.slug ? `/comunidad/${post.community.slug}` : "/comunidad",
+  );
+  await audit(me.id, approve ? "post.approve" : "post.reject", postId);
+  revalidateAdmin();
+  revalidatePath("/");
+  revalidatePath("/comunidad");
+  revalidatePath("/preguntar");
+  if (post.community?.slug) revalidatePath(`/comunidad/${post.community.slug}`);
 }

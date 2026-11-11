@@ -1,5 +1,6 @@
 "use server";
 import { revalidatePath } from "next/cache";
+import { clearLocalCache } from "./local-cache";
 import { redirect } from "next/navigation";
 import { db } from "./db";
 import { requirePermission, requireUser } from "./session";
@@ -8,9 +9,10 @@ import { notify } from "./notify";
 import type { PermissionKey } from "./constants";
 import { slugify } from "./slug";
 import { resolvePlace } from "./places";
-import { assistQuestion, assistantUserId, moderateText } from "./openai";
+import { assistQuestion, assistantUserId, moderateText, REVIEW_NOTICE } from "./openai";
 
 async function revalidate(path: string) {
+  clearLocalCache();
   revalidatePath(path);
 }
 
@@ -83,14 +85,38 @@ export async function reactToPost(postId: string, emoji: string, path: string) {
   await revalidate(path);
 }
 
+async function sendToReview(authorId: string, excerpt: string) {
+  const reviewers = await db.user.findMany({
+    where: { role: { key: { in: ["admin", "country_rep"] } }, id: { not: authorId } },
+    select: { id: true },
+  });
+  if (reviewers.length === 0) return;
+  const body = excerpt.trim().slice(0, 160);
+  await db.notification.createMany({
+    data: reviewers.map((r) => ({
+      userId: r.id,
+      type: "COMMUNITY",
+      title: "Texto en revisión",
+      body,
+      link: "/admin/revision",
+    })),
+  });
+}
+
 export async function postToChapterWall(communityId: string, body: string, path: string) {
   const me = await requirePermission("community.post");
   if (!body.trim()) return;
   const member = await db.communityMember.findUnique({ where: { communityId_userId: { communityId, userId: me.id } } });
   if (!member) return;
   const mod = await moderateText(body);
-  if (!mod.ok) redirect(`${path}?aviso=${encodeURIComponent(mod.notice ?? "Reformula el mensaje.")}`);
-  await db.post.create({ data: { communityId, authorId: me.id, kind: "CHAPTER_WALL", body: body.trim() } });
+  if (mod.decision === "clarify") redirect(`${path}?aviso=${encodeURIComponent(mod.notice ?? "Reformula el mensaje.")}`);
+  await db.post.create({
+    data: { communityId, authorId: me.id, kind: "CHAPTER_WALL", body: body.trim(), moderation: mod.decision === "review" ? "REVIEW" : "PUBLISHED" },
+  });
+  if (mod.decision === "review") {
+    await sendToReview(me.id, body);
+    redirect(`${path}?estado=revision`);
+  }
   await revalidate(path);
 }
 
@@ -103,9 +129,16 @@ export async function publishPost(formData: FormData) {
   const member = await db.communityMember.findUnique({ where: { communityId_userId: { communityId, userId: me.id } } });
   if (!member) return;
   const mod = await moderateText([title, body].filter(Boolean).join("\n"));
-  if (!mod.ok) redirect(`/comunidad/publicar?aviso=${encodeURIComponent(mod.notice ?? "Reformula el texto.")}`);
-  await db.post.create({ data: { communityId, authorId: me.id, kind: "PUBLICATION", title, body } });
+  if (mod.decision === "clarify") redirect(`/comunidad/publicar?aviso=${encodeURIComponent(mod.notice ?? "Reformula el texto.")}`);
+  await db.post.create({
+    data: { communityId, authorId: me.id, kind: "PUBLICATION", title, body, moderation: mod.decision === "review" ? "REVIEW" : "PUBLISHED" },
+  });
+  if (mod.decision === "review") {
+    await sendToReview(me.id, title ? `${title}. ${body}` : body);
+    redirect(`/comunidad/publicar?estado=revision`);
+  }
   const community = await db.community.findUnique({ where: { id: communityId } });
+  clearLocalCache();
   revalidatePath("/");
   revalidatePath("/comunidad");
   if (community?.slug) redirect(`/comunidad/${community.slug}`);
@@ -126,6 +159,7 @@ export async function proposeGroup(formData: FormData) {
   for (const r of reps) {
     await notify(r.id, "COMMUNITY", "Propuesta de grupo", `${me.name} propone «${name}».`, "/admin/grupos");
   }
+  clearLocalCache();
   revalidatePath("/comunidad");
   redirect("/comunidad");
 }
@@ -230,6 +264,14 @@ export async function postQuestion(formData: FormData, path: string) {
   const scopeId = String(formData.get("scopeId") ?? "") || undefined;
   const topicIds = formData.getAll("topicId").map(String);
   if (!body) return { error: "Escribe una pregunta." };
+  const gate = await moderateText(body);
+  if (gate.decision === "clarify") return { error: gate.notice || "Reformula la pregunta para publicarla." };
+  if (gate.decision === "review") {
+    await db.post.create({ data: { authorId: me.id, kind: "QUESTION", body, scopeId, moderation: "REVIEW" } });
+    await sendToReview(me.id, body);
+    await revalidate(path);
+    return { review: true as const };
+  }
   const catalog = await db.topic.findMany({ select: { id: true, name: true } });
   const ai = await assistQuestion(body, catalog.map((t) => t.name));
   if (ai?.decision === "clarify") {
@@ -319,6 +361,7 @@ export async function updateMyProfile(formData: FormData) {
   const profile = await db.profile.findUniqueOrThrow({ where: { userId: me.id } });
   await db.profileTopic.deleteMany({ where: { profileId: profile.id } });
   for (const topicId of topicIds) await db.profileTopic.create({ data: { profileId: profile.id, topicId } });
+  clearLocalCache();
   revalidatePath("/yo");
   revalidatePath("/yo/editar");
   revalidatePath("/mapa");

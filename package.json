@@ -18,6 +18,13 @@
     "seed": "tsx --env-file=.env prisma/seed.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.6.0",
+    "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/geolocation": "^8.2.4",
+    "@capacitor/local-notifications": "^8.3.1",
     "@prisma/client": "^6.19.3",
     "bcryptjs": "^3.0.3",
     "leaflet": "^1.9.4",

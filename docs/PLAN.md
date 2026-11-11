@@ -24,6 +24,10 @@ Criterio de salida fase 1: flujo navegable con BD y permisos en las acciones rel
 
 Sin auto-registro. Alta solo desde `/admin`. Vigencia y suspensión cierran la sesión en ≤ 5 min. Demo: `admin@icsf.local` (ver `.env`) y miembros `*@demo.icsf.local` / contraseña `icsf-demo`.
 
-## 4. Pendiente fuera de este prototipo
+## 4. Caché local
+
+Las secciones se guardan en `.cache/sections` para no consultar Postgres en cada visita. Descubrir pagina de 8 en 8 con scroll infinito. Detalle, plazos y borrado al escribir: `docs/CACHE_LOCAL.md`.
+
+## 5. Pendiente fuera de este prototipo
 
 Supabase, Storage de archivos reales, FCM, llamadas, notas de voz, pagos, asistente OpenAI en Preguntar, blockchain. Las 37 dudas de `MATRIZ_FUNCIONAL.md` se resolvieron con defaults de producto en el prototipo (ciudad no GPS exacto; chat de texto; credencial con registro propio; PDF vía imprimir). El despliegue de la app es Railway (`railway.toml`).

@@ -7,6 +7,17 @@ import Avatar from "@/components/Avatar";
 import TierBadge from "@/components/TierBadge";
 import Pill from "@/components/Pill";
 import SectionLabel from "@/components/SectionLabel";
+import SocialLinks from "@/components/SocialLinks";
+
+function bioParagraphs(bio: string) {
+  const text = bio.replace(/\r/g, "").trim();
+  const blocks = text.split(/\n{2,}/).map((part) => part.replace(/\s*\n\s*/g, " ").trim()).filter(Boolean);
+  if (blocks.length > 1) return blocks;
+  const sentences = text.replace(/\s+/g, " ").split(/(?<=[.!?])\s+/).filter(Boolean);
+  const groups: string[] = [];
+  for (let i = 0; i < sentences.length; i += 2) groups.push(sentences.slice(i, i + 2).join(" "));
+  return groups.length > 0 ? groups : [text];
+}
 
 export default async function PerfilMiembro({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
@@ -26,13 +37,14 @@ export default async function PerfilMiembro({ params }: { params: Promise<{ slug
       <DetailHeader title="Perfil de miembro" />
       <main className="flex-1 w-full bg-surface pt-16 pb-safe">
         <div className="px-margin py-6 flex flex-col items-center text-center gap-3 bg-surface-container-low">
-          <Avatar name={profile.user.name} size={88} />
+          <Avatar name={profile.user.name} src={profile.avatarUrl} size={88} />
           <div>
             <h1 className="font-headline-lg text-headline-lg text-on-surface">{profile.user.name}</h1>
             <p className="font-body-sm text-body-sm text-on-surface-variant flex items-center justify-center gap-1 mt-1"><span className="material-symbols-outlined text-[15px]">location_on</span>{[profile.city, profile.country].filter(Boolean).join(", ")}</p>
           </div>
           <div className="flex items-center gap-2"><TierBadge tier={profile.tier} /><span className="font-label-md text-label-md text-on-surface-variant">{profile.title}</span></div>
           {profile.quote && <p className="italic font-body-md text-body-md text-on-surface max-w-xs">"{profile.quote}"</p>}
+          <SocialLinks value={profile.socials} />
           {!isMe && (
             <div className="grid grid-cols-2 gap-2.5 w-full max-w-xs pt-2">
               {theyRequested && connection ? (
@@ -55,10 +67,22 @@ export default async function PerfilMiembro({ params }: { params: Promise<{ slug
 
         <div className="px-margin py-5 space-y-5">
           {profile.bio && (
-            <section><SectionLabel>Sobre mí</SectionLabel><p className="font-body-md text-body-md text-on-surface leading-relaxed mt-1.5">{profile.bio}</p></section>
+            <section className="rounded-2xl bg-surface-container-lowest border border-border-subtle p-5 shadow-[0_8px_24px_-16px_rgba(14,28,47,0.45)]">
+              <SectionLabel>Sobre mí</SectionLabel>
+              <div className="mt-4 space-y-4 border-l-2 border-ambassador-gold pl-4">
+                {bioParagraphs(profile.bio).map((paragraph, index) => (
+                  <p key={index} className={index === 0 ? "text-[15px] leading-7 text-on-surface font-medium" : "text-[14px] leading-7 text-on-surface-variant"}>
+                    {paragraph}
+                  </p>
+                ))}
+              </div>
+            </section>
           )}
           {profile.topics.length > 0 && (
-            <section><SectionLabel>Temas &amp; Especialidades</SectionLabel><div className="flex flex-wrap gap-2 mt-1.5">{profile.topics.map((t) => <span key={t.topicId} className="px-3 py-1.5 rounded-full bg-surface-container text-on-surface-variant font-label-md text-label-md">{t.topic.name}</span>)}</div></section>
+            <section className="rounded-2xl bg-surface-container-low px-5 py-4">
+              <SectionLabel>Temas &amp; Especialidades</SectionLabel>
+              <div className="flex flex-wrap gap-2 mt-3">{profile.topics.map((t) => <span key={t.topicId} className="px-3 py-1.5 rounded-full bg-surface-container-lowest border border-border-subtle text-on-surface font-label-md text-label-md">{t.topic.name}</span>)}</div>
+            </section>
           )}
           {connectIf.length > 0 && (
             <section className="bg-surface-container-lowest rounded-xl p-4 border border-border-subtle"><h2 className="font-label-md text-label-md uppercase tracking-wider text-secondary mb-1.5">Conecta conmigo si...</h2><p className="font-body-md text-body-md text-on-surface leading-relaxed">{connectIf.map((t) => t.tag.name).join(", ")}.</p></section>

@@ -40,19 +40,32 @@ async function chatJson(system: string, user: string): Promise<ChatResult> {
   }
 }
 
-function asDecision(value: unknown): "allow" | "clarify" {
-  return String(value ?? "").toLowerCase() === "clarify" ? "clarify" : "allow";
+function asDecision(value: unknown): "allow" | "review" | "clarify" {
+  const v = String(value ?? "").toLowerCase();
+  if (v === "clarify" || v === "block") return "clarify";
+  if (v === "review" || v === "revision") return "review";
+  return "allow";
 }
 
-/** Prefiltro. Si OpenAI no responde, se publica: la sanción sigue siendo humana. */
-export async function moderateText(text: string): Promise<{ ok: boolean; notice?: string }> {
+export const REVIEW_NOTICE =
+  "Tu texto es válido, pero toca un tema delicado. Quedó con un administrador para revisión y todavía no es visible para la comunidad.";
+
+/** allow = se publica. review = tema delicado legítimo, lo ve un administrador. clarify = acoso, odio, spam o estafa. */
+export async function moderateText(text: string): Promise<{ decision: "allow" | "review" | "clarify"; notice?: string }> {
   const parsed = await chatJson(
-    `Eres el prefiltro del código ético de ICSF (coaches y speakers). Responde solo JSON {"decision":"allow"|"clarify","notice":""}. Usa clarify ante acoso, odio, spam, estafa o datos personales de terceros. El tono informal se permite. notice: una frase en español solo si clarify, pidiendo reformular. No sancionar.`,
+    `Eres el prefiltro del código ético de ICSF, red de coaches y speakers. Responde solo JSON {"decision":"allow"|"review"|"clarify","notice":""}.
+allow: consulta o publicación profesional normal.
+review: el texto es una pregunta o aviso válido, pero trata un tema delicado (violencia, maltrato, abuso, duelo, enfermedad, muerte, temas legales) en contexto profesional, educativo o de conferencia. No lo rechaces. Ejemplo: "conferencia de maltrato" y "sobre asesinatos y maltrato animal, ¿alguien tiene material?" es review.
+clarify: solo acoso a una persona, odio, spam, estafa, pornografía o datos personales de terceros. notice: una frase en español pidiendo reformular, solo si clarify.
+En review, notice puede ir vacío.`,
     text.slice(0, 2000),
   );
-  if (!parsed || asDecision(parsed.decision) === "allow") return { ok: true };
+  if (!parsed) return { decision: "allow" };
+  const decision = asDecision(parsed.decision);
+  if (decision === "allow") return { decision: "allow" };
   const notice = String(parsed.notice ?? "").trim().slice(0, 240);
-  return { ok: false, notice: notice || "Reformula el texto para poder publicarlo." };
+  if (decision === "review") return { decision: "review", notice: REVIEW_NOTICE };
+  return { decision: "clarify", notice: notice || "Reformula el texto: no puede publicarse así." };
 }
 
 export type QuestionAssist = {
@@ -65,15 +78,16 @@ export type QuestionAssist = {
 export async function assistQuestion(body: string, topicNames: string[]): Promise<QuestionAssist | null> {
   const parsed = await chatJson(
     `Eres el asistente de la International Coaching & Speaker Federation (ICSF). Responde solo JSON {"decision":"allow"|"clarify","notice":"","topics":[],"answer":""}.
-clarify si hay acoso, odio, spam o la pregunta no se entiende; notice pide reformular, en español.
+clarify si hay acoso a una persona, odio, spam o la pregunta no se entiende. Un tema delicado pero profesional (maltrato, violencia, duelo) no es clarify: usa allow y responde con cuidado, sin detalles gráficos.
 allow: answer son 2 a 4 frases en español, prácticas para coaches o speakers, sin inventar políticas, cifras ni credenciales oficiales. Cierra diciendo que la comunidad también puede responder. topics: máximo 2 nombres EXACTOS de esta lista, o vacío: ${topicNames.join(" | ")}.`,
     body.slice(0, 280),
   );
   if (!parsed) return null;
+  const decision = asDecision(parsed.decision);
   const topics = Array.isArray(parsed.topics) ? parsed.topics.map((t) => String(t)) : [];
   const answer = String(parsed.answer ?? "").trim();
   return {
-    decision: asDecision(parsed.decision),
+    decision: decision === "clarify" ? "clarify" : "allow",
     notice: String(parsed.notice ?? "").trim().slice(0, 240) || undefined,
     topics,
     answer: answer || undefined,

@@ -16,7 +16,7 @@ export default async function Inicio({ searchParams }: { searchParams: Promise<{
     me, birthdayToday, newMember, publication, threads, event, myRsvp, suggestion,
     academy, agenda, memberCount, credential, unlockCount, goingCount,
   } = await getHomeFeed(user.id);
-  const first = (user.name ?? "").split(" ")[0] || "colega";
+  const first = (me.user.name ?? user.name ?? "").split(" ")[0] || "colega";
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Buenos días" : hour < 19 ? "Buenas tardes" : "Buenas noches";
   const hoyCards = [birthdayToday, newMember, publication].filter(Boolean);

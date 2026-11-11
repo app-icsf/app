@@ -87,10 +87,23 @@ async function main() {
   const adminEmail = (process.env.SEED_ADMIN_EMAIL ?? "admin@icsf.local").toLowerCase();
   const adminPasswordHash = await bcrypt.hash(process.env.SEED_ADMIN_PASSWORD ?? "cambia-esto", 10);
   const memberPasswordHash = await bcrypt.hash(process.env.SEED_MEMBER_PASSWORD ?? "icsf-demo", 10);
-  const admin = await db.user.upsert({ where: { email: adminEmail }, update: { passwordHash: adminPasswordHash }, create: { email: adminEmail, name: "Sofía Valenzuela", passwordHash: adminPasswordHash, roleId: adminRole.id } });
+  const ivan = {
+    name: "Iván Fernández",
+    title: "Empresario, autor y conferencista internacional",
+    quote: "Talento que trasciende fronteras",
+    bio: "Iván Fernández Almaguer es empresario, autor, conferencista internacional, abogado, letrista y cantautor, nacido en Monterrey, Nuevo León. Es CEO de LMSEDK® y Nodo609®. Autor de Vence el miedo al éxito y el autosabotaje. Conduce Despertar Infinito y preside el Centro Liderazgo y Abundancia en Acción A.C.",
+    city: "Monterrey",
+    region: "Nuevo León",
+    country: "México",
+    lat: 25.686,
+    lng: -100.316,
+    avatarUrl: "/avatars/ivan-fernandez.webp",
+  };
+  const admin = await db.user.upsert({ where: { email: adminEmail }, update: { passwordHash: adminPasswordHash, name: ivan.name, validUntil: new Date("2027-10-29T23:59:59.000Z") }, create: { email: adminEmail, name: ivan.name, passwordHash: adminPasswordHash, roleId: adminRole.id, validUntil: new Date("2027-10-29T23:59:59.000Z") } });
   await db.profile.upsert({
-    where: { userId: admin.id }, update: { city: "Ciudad de México", country: "México", region: "Ciudad de México", lat: 19.432, lng: -99.133 },
-    create: { userId: admin.id, slug: "sofia-valenzuela", title: "Master Speaker", tierId: tier.master, quote: "Construyo puentes entre la oratoria y el liderazgo consciente.", bio: "Directiva de membresía ICSF. Acompaña a la cohorte Master Speaker y coordina el capítulo México.", city: "Ciudad de México", country: "México", region: "Ciudad de México", lat: 19.432, lng: -99.133, chapterId: chapter["México"], birthday: monthDay(days(120)) },
+    where: { userId: admin.id },
+    update: { slug: "ivan-fernandez", title: ivan.title, quote: ivan.quote, bio: ivan.bio, city: ivan.city, country: ivan.country, region: ivan.region, lat: ivan.lat, lng: ivan.lng, avatarUrl: ivan.avatarUrl, chapterId: chapter["México"] },
+    create: { userId: admin.id, slug: "ivan-fernandez", title: ivan.title, tierId: tier.certified, quote: ivan.quote, bio: ivan.bio, city: ivan.city, country: ivan.country, region: ivan.region, lat: ivan.lat, lng: ivan.lng, avatarUrl: ivan.avatarUrl, chapterId: chapter["México"] },
   });
 
   type Seed = { name: string; email: string; title: string; tier: string; city: string; country: string; region?: string; topics: string[]; bday?: number; mentor?: boolean; role?: string; bio: string; quote?: string };
@@ -379,8 +392,8 @@ async function main() {
   }
 
   const credential = await db.credential.upsert({
-    where: { number: "ICSF-CERT-2026-8841" }, update: {},
-    create: { userId: admin.id, number: "ICSF-CERT-2026-8841", title: "Master Speaker", status: "ACTIVE", issuedAt: days(-220), expiresAt: days(880), signedByName: "Dr. Arthur Pendelton", signedByRole: "Presidente Consejo Académico ICSF", verifyCode: "ICSF-VERIFY-8841", blockNumber: "19,402" },
+    where: { number: "M-8259EA96F37E" }, update: { title: "Miembro Acreditado", status: "ACTIVE", expiresAt: new Date("2027-10-29T23:59:59.000Z") },
+    create: { userId: admin.id, number: "M-8259EA96F37E", title: "Miembro Acreditado", status: "ACTIVE", issuedAt: days(-220), expiresAt: new Date("2027-10-29T23:59:59.000Z"), signedByName: "Dr. Arthur Pendelton", signedByRole: "Presidente Consejo Académico ICSF", verifyCode: "ICSF-VERIFY-8841", blockNumber: "19,402" },
   });
   for (const name of Object.keys(comp)) await db.credentialCompetency.upsert({ where: { credentialId_competencyId: { credentialId: credential.id, competencyId: comp[name] } }, update: {}, create: { credentialId: credential.id, competencyId: comp[name] } });
 

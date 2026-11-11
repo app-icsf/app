@@ -11,9 +11,9 @@ import { timeAgo } from "@/lib/format";
 
 const QUICK_REACTIONS = ["👏", "💡", "🔥", "🎯", "🙌"];
 
-export default async function ComunidadDetalle({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ aviso?: string }> }) {
+export default async function ComunidadDetalle({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ aviso?: string; estado?: string }> }) {
   const { slug } = await params;
-  const { aviso } = await searchParams;
+  const { aviso, estado } = await searchParams;
   const user = await requireUser();
   const { community, chapter, posts, isMember } = await getChapterWall(slug, user.id);
   const path = `/comunidad/${slug}`;
@@ -75,6 +75,13 @@ export default async function ComunidadDetalle({ params, searchParams }: { param
         </div>
 
         <div className="flex-1 overflow-y-auto px-margin py-4 space-y-4">
+          {(estado === "revision" || aviso?.includes("tema delicado")) && (
+            <div role="status" className="rounded-2xl bg-honor-amber-soft text-on-tertiary-container p-4 space-y-1">
+              <p className="font-label-lg">Enviado a revisión</p>
+              <p className="text-body-sm">Tu texto es válido, pero toca un tema delicado. Un administrador lo revisará antes de que la comunidad lo vea.</p>
+            </div>
+          )}
+          {aviso && estado !== "revision" && !aviso.includes("tema delicado") && <p role="alert" className="rounded-lg bg-honor-amber-soft text-on-tertiary-container text-body-sm p-3">{aviso}</p>}
           {posts.length === 0 && <EmptyState>Aún no hay publicaciones. Sé la primera persona en escribir.</EmptyState>}
           {posts.map((p) => (
             <article key={p.id} className="bg-surface-card rounded-xl p-space-md card-elevated space-y-space-sm">
@@ -85,6 +92,7 @@ export default async function ComunidadDetalle({ params, searchParams }: { param
                     <span className="font-headline-sm text-headline-sm text-on-surface font-bold truncate">{p.author.name}</span>
                     {p.author.profile?.chapterRole && <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-label-sm bg-honor-amber-soft text-ambassador-gold">{p.author.profile.chapterRole}</span>}
                     <span className="text-body-sm text-outline">{timeAgo(p.createdAt)}</span>
+                    {p.moderation === "REVIEW" && <span className="px-2 py-0.5 rounded-full bg-honor-amber-soft text-[10px] font-label-sm text-on-tertiary-container">En revisión</span>}
                   </div>
                   {p.title && (
                     <div className="mt-1 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-surface-container font-label-sm text-secondary font-semibold">
@@ -113,7 +121,6 @@ export default async function ComunidadDetalle({ params, searchParams }: { param
           ))}
         </div>
 
-        {aviso && <p role="alert" className="mx-margin mb-3 rounded-lg bg-honor-amber-soft text-on-tertiary-container text-body-sm p-3">{aviso}</p>}
         <MessageComposer placeholder={`Escribe un mensaje en ${community.name}...`}
           action={async (fd: FormData) => { "use server"; await postToChapterWall(community.id, String(fd.get("body") ?? ""), path); }} />
       </main>

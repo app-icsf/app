@@ -17,6 +17,7 @@ export default async function Preguntar({ searchParams }: { searchParams: Promis
     "use server";
     const result = await postQuestion(formData, "/preguntar");
     if (result?.error) redirect(`/preguntar?aviso=${encodeURIComponent(result.error)}`);
+    if (result && "review" in result && result.review) redirect(`/preguntar?aviso=${encodeURIComponent("Tu pregunta es válida, pero toca un tema delicado. Quedó con un administrador para revisión.")}`);
     if (result?.id) redirect(`/preguntar/${result.id}`);
   }
 

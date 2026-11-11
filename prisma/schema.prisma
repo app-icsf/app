@@ -229,6 +229,7 @@ model Profile {
   tier      Tier?    @relation(fields: [tierId], references: [id])
   bio       String?
   avatarUrl String?
+  socials   Json? // redes del directorio público: [{ network, url }]
   city      String?
   country   String?
   region    String? // estado / departamento (agrupación del mapa, no GPS)
@@ -319,6 +320,7 @@ model Post { // hilos / muro de capítulo / preguntas a la comunidad / publicaci
   parent      Post?       @relation("replies", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   replies     Post[]      @relation("replies")
   createdAt   DateTime    @default(now())
+  moderation  String      @default("PUBLISHED") // PUBLISHED | REVIEW | REJECTED
 
   topics    PostTopic[]
   reactions PostReaction[]

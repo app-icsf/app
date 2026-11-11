@@ -1,0 +1,10 @@
+{
+  "appId": "com.icsf.app",
+  "appName": "ICSF",
+  "webDir": "public",
+  "server": {
+    "url": "http://192.168.68.108:3000",
+    "cleartext": true,
+    "androidScheme": "http"
+  }
+}

@@ -5,6 +5,7 @@ const LINKS = [
   { href: "/admin", label: "Resumen" },
   { href: "/admin/usuarios", label: "Usuarios" },
   { href: "/admin/grupos", label: "Grupos" },
+  { href: "/admin/revision", label: "Revisión" },
   { href: "/admin/propuestas", label: "Propuestas" },
   { href: "/admin/viajes", label: "Viajes" },
   { href: "/admin/eventos", label: "Eventos" },

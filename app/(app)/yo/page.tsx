@@ -28,13 +28,13 @@ export default async function Yo() {
         <div className="flex flex-col w-full px-margin pb-6 gap-y-space-md">
           <div className="pt-space-md space-y-3">
             <div className="flex items-start gap-3">
-              <Avatar name={user.name ?? "Miembro"} size={64} />
+              <Avatar name={profile.user.name} src={profile.avatarUrl} size={64} />
               <div className="min-w-0 flex-1">
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-honor-amber-soft text-on-tertiary-container font-label-sm text-label-sm">
                   <span className="material-symbols-outlined filled text-[14px] text-ambassador-gold">verified</span>
-                  {profile.tier?.name ?? "Miembro ICSF"}
+                  {credential?.title ?? profile.tier?.name ?? "Miembro ICSF"}
                 </span>
-                <h1 className="text-headline-lg font-headline-lg text-on-surface tracking-tight font-bold mt-1">{user.name}</h1>
+                <h1 className="text-headline-lg font-headline-lg text-on-surface tracking-tight font-bold mt-1">{profile.user.name}</h1>
                 <p className="text-body-md font-body-md text-on-surface-variant">{profile.title ?? "Tu crecimiento, impacto y aportes a la red ICSF."}</p>
               </div>
             </div>
@@ -44,6 +44,10 @@ export default async function Yo() {
                 <span className="material-symbols-outlined text-[16px] text-ambassador-gold">badge</span> Credencial
               </Link>
             </div>
+            <Link href="/puente" className="h-11 rounded-lg border border-border-subtle bg-surface-container-lowest text-on-surface font-label-md text-label-md flex items-center justify-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px] text-secondary">phonelink_ring</span>
+              Probar puente del teléfono
+            </Link>
           </div>
 
           {incoming.length > 0 && (

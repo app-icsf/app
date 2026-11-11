@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/session";
-import { getConversations } from "@/lib/data";
-import { db } from "@/lib/db";
+import { countMentors, getConversations } from "@/lib/data";
 import RootHeader from "@/components/RootHeader";
 import Avatar from "@/components/Avatar";
 import TierBadge from "@/components/TierBadge";
@@ -12,9 +11,9 @@ import { timeAgo } from "@/lib/format";
 
 export default async function Mensajes() {
   const user = await requireUser();
-  const [conversations, mentors] = await Promise.all([
+  const [conversations, mentorCount] = await Promise.all([
     getConversations(user.id),
-    db.profile.findMany({ where: { isMentor: true, userId: { not: user.id } }, take: 4, include: { user: true } }),
+    countMentors(user.id),
   ]);
   const totalUnread = conversations.reduce((a, c) => a + c.unread, 0);
   const pinned = conversations.filter((c) => c.pinned);
@@ -39,7 +38,7 @@ export default async function Mensajes() {
                   if (!other) return null;
                   return (
                     <Link key={c.conversationId} href={`/mensajes/${c.conversationId}`} className="flex flex-col items-center gap-1 shrink-0 w-16">
-                      <Avatar name={other.name} size={56} /><span className="font-label-sm text-label-sm text-on-surface truncate w-full text-center">{other.name.split(" ")[0]}</span>
+                      <Avatar name={other.name} src={other.profile?.avatarUrl} size={56} /><span className="font-label-sm text-label-sm text-on-surface truncate w-full text-center">{other.name.split(" ")[0]}</span>
                     </Link>
                   );
                 })}
@@ -54,7 +53,7 @@ export default async function Mensajes() {
               const title = c.conversation.title ?? other?.name ?? "Conversación";
               return (
                 <Link key={c.conversationId} href={`/mensajes/${c.conversationId}`} className="flex items-center gap-3 py-3 border-b border-border-subtle">
-                  {other ? <Avatar name={other.name} size={48} /> : <IconCircle icon="support_agent" tone="primary" size={48} />}
+                  {other ? <Avatar name={other.name} src={other.profile?.avatarUrl} size={48} /> : <IconCircle icon="support_agent" tone="primary" size={48} />}
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5"><p className="font-label-lg text-label-lg text-on-surface truncate">{title}</p>{other?.profile?.tier && <TierBadge tier={other.profile.tier} />}</div>
                     <p className={`text-body-sm text-body-sm truncate ${c.unread > 0 ? "text-on-surface font-medium" : "text-on-surface-variant"}`}>{last?.kind === "VOICE" ? "🎙️ Nota de voz" : last?.kind === "FILE" ? `📎 ${last.attachmentName}` : last?.body ?? "Sin mensajes"}</p>
@@ -69,7 +68,7 @@ export default async function Mensajes() {
             {conversations.length === 0 && <EmptyState>Sin conversaciones todavía.</EmptyState>}
           </section>
 
-          {mentors.length > 0 && (
+          {mentorCount > 0 && (
             <Link href="/descubrir" className="bg-surface-container-lowest rounded-xl p-space-md border border-border-subtle flex items-center gap-3">
               <span className="material-symbols-outlined text-secondary text-[24px]">diversity_3</span>
               <div className="flex-1"><p className="font-label-lg text-label-lg text-on-surface">Salón de Mentores</p><p className="text-body-sm text-body-sm text-on-surface-variant">Conecta con un colega acreditado</p></div>

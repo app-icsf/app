@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { db } from "@/lib/db";
+import { getUnreadNotificationCount } from "@/lib/data";
 
 export default async function HeaderBell({ userId }: { userId: string }) {
-  const count = await db.notification.count({ where: { userId, readAt: null } });
+  const count = await getUnreadNotificationCount(userId);
   return (
     <Link href="/notificaciones" aria-label="Notificaciones" className="w-11 h-11 flex items-center justify-center rounded-full text-inverse-primary hover:text-on-primary relative transition-colors">
       <span className="material-symbols-outlined text-[22px]">notifications</span>
